@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Window — design mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..125,300..600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --open: 0;              /* 0..1 */
+    --sky-a:#0a0e26; --sky-b:#1b1f4a; --sky-c:#2d2551;
+    --brick:#080a18; --lit:#f4d9a0; --accent:#ff4d6d;
+    --frame:#3a3d45; --frame-hi:#5a5e68;
+    --room:#0b0b0d; --ink:#ffffff;
+    --sash-travel: 58%;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--room);
+    color:var(--ink);
+    font-family:'Archivo','Helvetica Neue',Arial,sans-serif;
+    font-variation-settings:'wdth' 100;
+    display:grid; place-items:center;
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  /* ---------- room ---------- */
+  .room{
+    position:relative;
+    width:min(92vw, 720px);
+    height:min(88vh, 860px);
+    display:grid; place-items:center;
+  }
+  /* light spilling from the window onto the interior */
+  .spill{
+    position:absolute; inset:-20%;
+    background:radial-gradient(60% 50% at 50% 45%, color-mix(in srgb, var(--accent) 40%, #fff) 0%, transparent 70%);
+    opacity:calc(0.04 + var(--open) * 0.14);
+    filter:blur(40px);
+    pointer-events:none;
+    transition:opacity .18s linear;
+  }
+
+  /* ---------- window ---------- */
+  .window{
+    position:relative;
+    width:100%; height:100%;
+    max-height:820px;
+    display:flex; flex-direction:column;
+    transition:opacity .28s ease;
+  }
+  .window.dim{opacity:0}
+
+  .casing{
+    position:relative;
+    flex:1;
+    border:14px solid var(--frame);
+    border-bottom-width:0;
+    border-radius:2px;
+    overflow:hidden;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.06), 0 30px 80px rgba(0,0,0,.6);
+    background:#000;
+  }
+
+  /* ---------- scene ---------- */
+  .glass{position:absolute; inset:0; overflow:hidden}
+  .scene{
+    position:absolute; inset:0;
+    background:linear-gradient(180deg, var(--sky-a) 0%, var(--sky-b) 52%, var(--sky-c) 100%);
+    filter:blur(calc((1 - var(--open)) * 3.5px)) saturate(calc(0.55 + var(--open) * 0.65)) brightness(calc(0.72 + var(--open) * 0.34));
+    transition:filter .18s linear;
+  }
+  .haze{ /* condensation on a closed window */
+    position:absolute; inset:0;
+    background:linear-gradient(180deg, rgba(200,215,235,.30), rgba(200,215,235,.10) 45%, rgba(200,215,235,.26));
+    opacity:calc(1 - var(--open));
+    pointer-events:none;
+    transition:opacity .18s linear;
+    mix-blend-mode:screen;
+  }
+  .skyline{position:absolute; left:0; right:0; bottom:0; height:62%}
+  .bld{position:absolute; bottom:0; background:var(--brick); display:grid; gap:3px; padding:8px 6px; align-content:start}
+  .bld i{width:4px; height:6px; background:var(--lit); display:block; border-radius:.5px}
+  .neon{
+    position:absolute; border-radius:1px;
+    background:var(--accent);
+    box-shadow:0 0 14px 3px var(--accent);
+  }
+  #rain{position:absolute; inset:0; pointer-events:none}
+
+  /* ---------- sash ---------- */
+  .sash{
+    position:absolute; left:-2px; right:-2px; top:0;
+    height:44%;
+    transform:translateY(calc(var(--open) * var(--sash-travel) * 1.9));
+    background:linear-gradient(180deg, rgba(10,12,16,.55), rgba(10,12,16,.35));
+    backdrop-filter:blur(2px);
+    border-bottom:10px solid var(--frame);
+    box-shadow:0 14px 26px rgba(0,0,0,.55);
+    touch-action:none; cursor:grab;
+    transition:transform .05s linear;
+  }
+  .sash:active{cursor:grabbing}
+  .sash::after{ /* glazing bar */
+    content:''; position:absolute; left:0; right:0; top:50%;
+    height:6px; background:var(--frame); opacity:.75;
+  }
+  .grip{
+    position:absolute; left:50%; bottom:-30px; transform:translateX(-50%);
+    width:104px; height:20px; border-radius:10px;
+    background:var(--frame-hi);
+    box-shadow:0 2px 0 rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.25);
+    display:grid; place-items:center;
+  }
+  .grip::before{content:''; width:44px; height:2px; background:rgba(0,0,0,.35); border-radius:2px}
+  .sash:focus-visible{outline:2px solid #fff; outline-offset:4px}
+
+  /* ---------- sill ---------- */
+  .sill{
+    position:relative;
+    background:var(--frame);
+    padding:22px 26px 26px;
+    border-radius:0 0 3px 3px;
+    box-shadow:0 24px 60px rgba(0,0,0,.55);
+  }
+  .sill::before{ /* light landing on the sill */
+    content:''; position:absolute; left:8%; right:8%; top:0; height:3px;
+    background:var(--accent);
+    filter:blur(4px);
+    opacity:calc(0.15 + var(--open)*0.7);
+  }
+  .place{display:flex; align-items:baseline; gap:14px; flex-wrap:wrap}
+  .city{
+    font-size:clamp(34px, 7vw, 58px);
+    font-variation-settings:'wdth' 118,'wght' 400;
+    letter-spacing:-.01em; line-height:.92;
+  }
+  .district{
+    font-size:15px; font-variation-settings:'wdth' 80,'wght' 400;
+    opacity:.62; letter-spacing:.02em;
+  }
+  .facts{
+    margin-top:14px; display:flex; gap:22px; align-items:baseline;
+    font-size:14px; font-variation-settings:'wdth' 80,'wght' 400; opacity:.72;
+  }
+  .facts b{font-variation-settings:'wdth' 80,'wght' 500; font-weight:400}
+
+  /* balance hairline */
+  .balance{margin-top:20px; display:flex; align-items:center; gap:12px}
+  .balance span{font-size:11px; opacity:.5; font-variation-settings:'wdth' 80}
+  .track{position:relative; flex:1; height:1px; background:rgba(255,255,255,.28)}
+  .track b{
+    position:absolute; top:-3px; width:7px; height:7px; border-radius:50%;
+    background:#fff; left:calc(var(--open) * 100%); transform:translateX(-50%);
+    transition:left .05s linear;
+  }
+
+  .nav{position:absolute; right:26px; top:22px; display:flex; gap:8px}
+  .nav button{
+    width:34px; height:34px; border-radius:50%;
+    border:1px solid rgba(255,255,255,.3);
+    background:transparent; color:#fff; cursor:pointer;
+    font-size:14px; line-height:1;
+    transition:background .15s ease;
+  }
+  .nav button:hover{background:rgba(255,255,255,.12)}
+  .nav button:focus-visible{outline:2px solid #fff; outline-offset:2px}
+
+  .hint{
+    position:fixed; bottom:14px; left:0; right:0; text-align:center;
+    font-size:11px; opacity:.32; font-variation-settings:'wdth' 80;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{transition:none !important; animation:none !important}
+  }
+</style>
+</head>
+<body>
+
+<div class="room">
+  <div class="spill"></div>
+
+  <div class="window" id="win">
+    <div class="casing">
+      <div class="glass">
+        <div class="scene">
+          <div class="skyline" id="skyline"></div>
+        </div>
+        <canvas id="rain"></canvas>
+        <div class="haze"></div>
+      </div>
+
+      <div class="sash" id="sash" role="slider" tabindex="0"
+           aria-label="Насколько открыто окно" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="grip"></div>
+      </div>
+    </div>
+
+    <div class="sill">
+      <div class="nav">
+        <button id="prev" aria-label="Предыдущий город">←</button>
+        <button id="next" aria-label="Следующий город">→</button>
+      </div>
+
+      <div class="place">
+        <div class="city" id="city">Tokyo</div>
+        <div class="district" id="district">Shibuya</div>
+      </div>
+
+      <div class="facts">
+        <div id="clock">21:43</div>
+        <div><b id="cond">Rain</b> <span id="temp">18°</span></div>
+      </div>
+
+      <div class="balance">
+        <span>music</span>
+        <div class="track"><b></b></div>
+        <span>city</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="hint">потяните створку вниз · ← → другой город</p>
+
+<script>
+const CITIES = [
+  {
+    name:'Tokyo', district:'Shibuya', tz:'Asia/Tokyo', cond:'Rain', temp:'18°',
+    rain:1, frame:'#3a3d45', frameHi:'#5a5e68',
+    sky:['#0a0e26','#1b1f4a','#2d2551'], brick:'#080a18', lit:'#f4d9a0', accent:'#ff4d6d',
+    neon:[[14,18,4,90],[74,26,3,64],[46,52,3,40]]
+  },
+  {
+    name:'Paris', district:'Le Marais', tz:'Europe/Paris', cond:'Overcast', temp:'12°',
+    rain:.25, frame:'#e6e2d8', frameHi:'#f5f2ea',
+    sky:['#b9bec4','#cfd2d2','#ded8cd'], brick:'#8d8578', lit:'#fff6e2', accent:'#8fa3b0',
+    neon:[]
+  },
+  {
+    name:'New York', district:'Lower East Side', tz:'America/New_York', cond:'Clear', temp:'9°',
+    rain:0, frame:'#2b2724', frameHi:'#463f39',
+    sky:['#2b3f63','#8f7a86','#e6b483'], brick:'#241a1a', lit:'#ffe6b0', accent:'#ffa15c',
+    neon:[[82,30,3,70]]
+  }
+];
+
+let idx = 0, open = 0;
+const root = document.documentElement;
+const sash = document.getElementById('sash');
+const skyline = document.getElementById('skyline');
+const cv = document.getElementById('rain');
+const ctx = cv.getContext('2d');
+
+function setOpen(v){
+  open = Math.min(1, Math.max(0, v));
+  root.style.setProperty('--open', open.toFixed(3));
+  sash.setAttribute('aria-valuenow', Math.round(open*100));
+}
+
+function buildScene(c){
+  root.style.setProperty('--sky-a', c.sky[0]);
+  root.style.setProperty('--sky-b', c.sky[1]);
+  root.style.setProperty('--sky-c', c.sky[2]);
+  root.style.setProperty('--brick', c.brick);
+  root.style.setProperty('--lit', c.lit);
+  root.style.setProperty('--accent', c.accent);
+  root.style.setProperty('--frame', c.frame);
+  root.style.setProperty('--frame-hi', c.frameHi);
+  root.style.setProperty('--ink', c.name === 'Paris' ? '#23211d' : '#ffffff');
+
+  skyline.innerHTML = '';
+  let x = -4;
+  while (x < 104){
+    const w = 8 + Math.random()*13;
+    const h = 22 + Math.random()*72;
+    const b = document.createElement('div');
+    b.className = 'bld';
+    b.style.left = x + '%';
+    b.style.width = w + '%';
+    b.style.height = h + '%';
+    const cols = Math.max(2, Math.round(w/3.4));
+    b.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    const rows = Math.round(h/7);
+    for (let i = 0; i < cols*rows; i++){
+      const win = document.createElement('i');
+      if (Math.random() > .42) win.style.opacity = 0.06 + Math.random()*0.1;
+      else win.style.opacity = 0.5 + Math.random()*0.5;
+      b.appendChild(win);
+    }
+    skyline.appendChild(b);
+    x += w - 1.5;
+  }
+  c.neon.forEach(([l,t,w,h]) => {
+    const n = document.createElement('div');
+    n.className = 'neon';
+    n.style.cssText = `left:${l}%;top:${t}%;width:${w}px;height:${h}px`;
+    skyline.appendChild(n);
+  });
+}
+
+function render(){
+  const c = CITIES[idx];
+  document.getElementById('city').textContent = c.name;
+  document.getElementById('district').textContent = c.district;
+  document.getElementById('cond').textContent = c.cond;
+  document.getElementById('temp').textContent = c.temp;
+  buildScene(c);
+  tick();
+}
+
+function tick(){
+  const c = CITIES[idx];
+  document.getElementById('clock').textContent =
+    new Intl.DateTimeFormat('ru-RU', {hour:'2-digit', minute:'2-digit', timeZone:c.tz}).format(new Date());
+}
+setInterval(tick, 20000);
+
+/* rain */
+let drops = [];
+function sizeCanvas(){
+  cv.width = cv.offsetWidth; cv.height = cv.offsetHeight;
+  drops = Array.from({length:260}, () => ({
+    x:Math.random()*cv.width, y:Math.random()*cv.height,
+    l:6+Math.random()*16, v:3+Math.random()*7
+  }));
+}
+function loop(){
+  const c = CITIES[idx];
+  ctx.clearRect(0,0,cv.width,cv.height);
+  if (c.rain > 0){
+    ctx.strokeStyle = `rgba(255,255,255,${(0.06 + open*0.20) * c.rain})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    const n = Math.round(drops.length * c.rain * (0.35 + open*0.65));
+    for (let i = 0; i < n; i++){
+      const d = drops[i];
+      ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - 2, d.y + d.l);
+      d.y += d.v * (0.5 + open); d.x -= .5;
+      if (d.y > cv.height){ d.y = -20; d.x = Math.random()*cv.width; }
+    }
+    ctx.stroke();
+  }
+  requestAnimationFrame(loop);
+}
+
+/* drag the sash */
+let dragging = false, startY = 0, startOpen = 0;
+sash.addEventListener('pointerdown', e => {
+  dragging = true; startY = e.clientY; startOpen = open;
+  sash.setPointerCapture(e.pointerId);
+});
+sash.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  const range = document.querySelector('.casing').offsetHeight * 0.55;
+  setOpen(startOpen + (e.clientY - startY) / range);
+});
+sash.addEventListener('pointerup', () => dragging = false);
+sash.addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown'){ setOpen(open + .08); e.preventDefault(); }
+  if (e.key === 'ArrowUp'){ setOpen(open - .08); e.preventDefault(); }
+});
+
+/* city switching — dip to dark, then a different frame */
+function go(step){
+  const win = document.getElementById('win');
+  win.classList.add('dim');
+  setTimeout(() => {
+    idx = (idx + step + CITIES.length) % CITIES.length;
+    render();
+    win.classList.remove('dim');
+  }, 280);
+}
+document.getElementById('next').onclick = () => go(1);
+document.getElementById('prev').onclick = () => go(-1);
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight') go(1);
+  if (e.key === 'ArrowLeft') go(-1);
+});
+
+window.addEventListener('resize', sizeCanvas);
+render();
+sizeCanvas();
+loop();
+setOpen(0);
+</script>
+</body>
+</html>
