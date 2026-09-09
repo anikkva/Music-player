@@ -4,8 +4,9 @@
     {
       "name": "car-radio",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["serve.py", "4181"],
-      "port": 4181
+      "runtimeArgs": ["serve.py"],
+      "port": 4181,
+      "autoPort": true
     }
   ]
 }
