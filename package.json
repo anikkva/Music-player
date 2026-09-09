@@ -1,0 +1,11 @@
+{
+  "name": "car-radio-3d-player",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "3D car-radio music player: a first-person view of a car interior where the radio is the player",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "start": "python3 -m http.server 4173"
+  }
+}
