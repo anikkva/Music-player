@@ -1,0 +1,171 @@
+// Entry point: builds the scene and wires the physical controls to the player.
+
+import * as THREE from 'three';
+import { TRACKS } from './tracks.js';
+import { createPlayer, STATUS } from './player.js';
+import { createScene, isWebGLAvailable } from './scene.js';
+import { createInterior } from './interior.js';
+import { createRadio } from './radio.js';
+import { createLcd } from './lcd.js';
+import { createHand } from './hand.js';
+import { createCameraRig } from './camera.js';
+import { createInteraction } from './interaction.js';
+import { angleToVolume, volumeToAngle, MIN_ANGLE, MAX_ANGLE } from './knob.js';
+import { RADIO_POSITION, RADIO_YAW, RADIO_PITCH } from './layout.js';
+
+const canvas = document.getElementById('scene');
+const overlay = document.getElementById('overlay');
+const startButton = document.getElementById('start');
+const tooltipEl = document.getElementById('tooltip');
+const hud = document.getElementById('hud');
+
+if (!isWebGLAvailable()) {
+  document.getElementById('unsupported').hidden = false;
+  overlay.hidden = true;
+  canvas.hidden = true;
+} else {
+  boot();
+}
+
+function boot() {
+  const { scene, camera, renderer, lcdGlow, render } = createScene(canvas);
+
+  scene.add(createInterior().group);
+
+  // ---- radio, seated in the centre stack and turned toward the driver ----
+  const radio = createRadio();
+  radio.group.position.set(...RADIO_POSITION);
+  // Turned toward the driver and tilted up a little. Set explicitly rather
+  // than with lookAt, which would also roll the plate.
+  radio.group.rotation.order = 'YXZ';
+  radio.group.rotation.y = RADIO_YAW;
+  radio.group.rotation.x = RADIO_PITCH;
+  scene.add(radio.group);
+
+  const lcd = createLcd();
+  radio.lcdMesh.material.map = lcd.texture;
+  radio.lcdMesh.material.needsUpdate = true;
+
+  const hand = createHand();
+  radio.group.add(hand.group);
+
+  // ---- audio ----
+  const player = createPlayer({
+    tracks: TRACKS,
+    onTrackChange: (track) => lcd.setTrack(track),
+    onStatus: (status) => {
+      if (status === STATUS.NO_SIGNAL) lcd.flashStatus('NO SIGNAL', 1600);
+      if (status === STATUS.END) lcd.flashStatus('END OF TAPE', 6000);
+      if (status === STATUS.PAUSED) lcd.flashStatus('PAUSE', 900);
+    },
+  });
+  lcd.setTrack(TRACKS[0]);
+
+  // ---- camera, aimed at the radio for the opening frame ----
+  const toRadio = radio.group.position.clone().normalize();
+  const cameraRig = createCameraRig(camera, canvas, {
+    yaw: Math.atan2(-toRadio.x, -toRadio.z),
+    pitch: Math.asin(toRadio.y),
+    zoom: 0.40,
+  });
+
+  // ---- volume lives on the TUNE knob ----
+  let knobAngle = volumeToAngle(player.getVolume(), MIN_ANGLE, MAX_ANGLE);
+  radio.setKnobVolume(player.getVolume());
+
+  function applyKnobDelta(delta) {
+    knobAngle = Math.min(MAX_ANGLE, Math.max(MIN_ANGLE, knobAngle + delta));
+    const volume = angleToVolume(knobAngle, MIN_ANGLE, MAX_ANGLE);
+    player.setVolume(volume);
+    radio.setKnobAngle('tuneKnob', -knobAngle);
+    lcd.showVolume(volume);
+  }
+
+  // ---- control -> action mapping (see the spec's table) ----
+  const ACTIONS = {
+    seekPrev: () => player.prev(),
+    seekNext: () => player.next(),
+    slotPrev: () => player.prev(),
+    slotNext: () => player.next(),
+    volKnob: () => player.toggle(),
+    // Decorative: they depress and light up, but nothing happens.
+    am: null, fm: null, preset: null, eject: null, ejectArrow: null, cassette: null,
+  };
+
+  const LABELS = {
+    seekPrev: '◀ ПРЕДЫДУЩИЙ', seekNext: 'СЛЕДУЮЩИЙ ▶',
+    slotPrev: '◀ ПРЕДЫДУЩИЙ', slotNext: 'СЛЕДУЮЩИЙ ▶',
+    volKnob: 'PLAY / PAUSE', tuneKnob: 'ГРОМКОСТЬ',
+    am: 'AM', fm: 'FM', preset: 'PRESET', eject: 'EJECT',
+    ejectArrow: 'EJECT', cassette: 'КАССЕТА',
+  };
+
+  async function activate(controlId) {
+    if (controlId === 'tuneKnob') return; // handled by dragging, not clicking
+    if (hand.isBusy() || hand.isHolding()) return;
+
+    interaction.setBusy(true);
+    const target = radio.controls[controlId].position.clone();
+    const touched = await hand.pressAt(target);
+    if (touched) {
+      // The action fires on contact, not on click.
+      radio.pressButton(controlId);
+      ACTIONS[controlId]?.();
+    }
+    interaction.setBusy(false);
+  }
+
+  const interaction = createInteraction({
+    camera,
+    domElement: canvas,
+    radio,
+    cameraRig,
+    tooltipEl,
+    labels: LABELS,
+    onActivate: activate,
+    onKnobDelta: (id, delta, phase) => {
+      if (id !== 'tuneKnob') return;
+      if (phase.grab) hand.grabAt(radio.controls.tuneKnob.position.clone());
+      if (phase.release) { hand.release(); return; }
+      if (delta) {
+        applyKnobDelta(delta);
+        hand.setGrabSpin(-knobAngle);
+      }
+    },
+  });
+
+  // ---- start gesture ----
+  // It only puts the user in the driver's seat: the tape is loaded but silent
+  // until they press a control on the radio itself.
+  startButton.addEventListener('click', () => {
+    overlay.classList.add('hide');
+    hud.hidden = false;
+    player.arm();
+    lcd.flashStatus('PRESS VOL', 2200);
+    setTimeout(() => { overlay.hidden = true; }, 800);
+  });
+
+  // Debug handle, handy when checking framing from the console.
+  window.__player = { camera, radio, cameraRig, scene, player, renderer, render, lcd, hand };
+
+  // ---- frame loop ----
+  const clock = new THREE.Clock();
+  function frame() {
+    const now = performance.now();
+    clock.getDelta();
+
+    cameraRig.update();
+    radio.update(now);
+    hand.update(now);
+    lcd.update(now);
+
+    // The display's glow breathes a little while a track plays.
+    lcdGlow.intensity = player.isPlaying()
+      ? 0.05 + Math.sin(now / 420) * 0.008
+      : 0.03;
+
+    render();
+    requestAnimationFrame(frame);
+  }
+  frame();
+}

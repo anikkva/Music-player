@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Автомагнитола</title>
+  <link rel="stylesheet" href="styles/style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <div id="unsupported" hidden>
+    <h1>Нужен браузер с поддержкой WebGL</h1>
+    <p>Этот плеер — трёхмерная сцена. Откройте страницу в свежем Chrome, Safari или Firefox.</p>
+  </div>
+
+  <div id="overlay">
+    <div class="overlay-card">
+      <p class="overlay-kicker">1998 · FM STEREO CASSETTE</p>
+      <h1>Сядь за руль</h1>
+      <p class="overlay-text">
+        Плеер — это автомагнитола в салоне. Тяни мышью, чтобы оглядеться,
+        крути колесо для зума, кликай по кнопкам — рука дотянется и нажмёт.
+        Музыка включается крутилкой <b>VOL</b>, ничего не играет само.
+      </p>
+      <button id="start" type="button">Сесть за руль</button>
+    </div>
+  </div>
+
+  <div id="hud" hidden>
+    <span><b>Тяни</b> — оглядеться</span>
+    <span><b>Колесо</b> — зум</span>
+    <span><b>SEEK</b> — трек</span>
+    <span><b>VOL</b> — пауза</span>
+    <span><b>TUNE</b> — громкость</span>
+  </div>
+
+  <div id="tooltip" hidden></div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

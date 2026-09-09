@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "demo-static",
+      "name": "car-radio",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "4173", "--directory", "demo"],
-      "port": 4173
+      "runtimeArgs": ["serve.py", "4181"],
+      "port": 4181
     }
   ]
 }
