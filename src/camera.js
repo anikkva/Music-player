@@ -3,19 +3,34 @@
 
 import { clampYaw, clampPitch, clampZoom, ZOOM_MIN, ZOOM_MAX } from './cameraMath.js';
 
-// Framing is defined horizontally — the faceplate is a wide object, and a
-// vertical fov alone crops it on portrait viewports.
-const HFOV_NEAR = 26;  // close-up: the faceplate fills the frame
-const HFOV_FAR = 100;  // wide: steering wheel, windshield, passenger seat
+// Framing is solved for BOTH axes. A fov defined on one axis alone crops the
+// radio on the other whenever the window is a shape we did not expect — tall,
+// square, or very wide — and the opening shot is supposed to hold the whole
+// unit.
+
 const DRAG_THRESHOLD = 5; // px — beyond this a gesture is a look, not a click
 
+// Distance from the driver's eyes to the faceplate, and the half-extents of
+// the framed region at each end of the zoom range. Near: the radio plus its
+// bezel with a margin. Far: the whole cabin ahead of the driver.
+const RADIO_DISTANCE = 0.867;
+const NEAR_HALF = { w: 0.205, h: 0.120 };
+const FAR_HALF = { w: 1.03, h: 0.60 };
+
 const deg = (r) => (r * 180) / Math.PI;
-const rad = (d) => (d * Math.PI) / 180;
+
+/** Smallest vertical fov that fits `half` on both axes at this aspect. */
+function fovFor(half, aspect) {
+  const fromHeight = 2 * deg(Math.atan(half.h / RADIO_DISTANCE));
+  const fromWidth = 2 * deg(Math.atan(half.w / Math.max(aspect, 0.2) / RADIO_DISTANCE));
+  return Math.max(fromHeight, fromWidth);
+}
 
 export function zoomToFov(z, aspect) {
   const t = (z - ZOOM_MIN) / (ZOOM_MAX - ZOOM_MIN);
-  const hfov = HFOV_NEAR + t * (HFOV_FAR - HFOV_NEAR);
-  return deg(2 * Math.atan(Math.tan(rad(hfov) / 2) / Math.max(aspect, 0.2)));
+  const near = fovFor(NEAR_HALF, aspect);
+  const far = fovFor(FAR_HALF, aspect);
+  return near + t * (far - near);
 }
 
 export function createCameraRig(camera, domElement, { yaw = 0, pitch = 0, zoom = 0.38 } = {}) {

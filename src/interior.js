@@ -8,7 +8,7 @@
 // car's windshield is at negative z.
 
 import * as THREE from 'three';
-import { dashTexture, upholsteryTexture } from './textures.js';
+import { dashTexture, upholsteryTexture, gaugeTexture, grilleTexture } from './textures.js';
 import { RADIO_POSITION, RADIO_YAW, RADIO_PITCH } from './layout.js';
 
 const dark = (color, roughness = 0.9, metalness = 0.1) =>
@@ -21,10 +21,10 @@ export function createInterior() {
   const cloth = upholsteryTexture();
   cloth.repeat.set(2, 2);
 
-  const dashMat = new THREE.MeshStandardMaterial({ map: dash, color: 0x6a6a6a, roughness: 0.95 });
-  const clothMat = new THREE.MeshStandardMaterial({ map: cloth, color: 0x8a8a8a, roughness: 1 });
+  const dashMat = new THREE.MeshStandardMaterial({ map: dash, color: 0x8a8a8a, roughness: 0.95 });
+  const clothMat = new THREE.MeshStandardMaterial({ map: cloth, color: 0x7c7c7c, roughness: 1 });
   const trimMat = dark(0x141414, 0.85);
-  const plasticMat = dark(0x1c1a18, 0.8);
+  const plasticMat = dark(0x2b2825, 0.8);
 
   const add = (mesh, x, y, z, rx = 0, ry = 0, rz = 0) => {
     mesh.position.set(x, y, z);
@@ -43,21 +43,66 @@ export function createInterior() {
   add(new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.05, 0.30), dashMat),
     -0.44, -0.20, -0.72, -0.30);
 
-  // Gauge cluster face.
-  const cluster = add(new THREE.Mesh(new THREE.PlaneGeometry(0.50, 0.20), dark(0x0a0a0b, 1)),
+  // Gauge cluster: the second lit thing in the cabin after the display, and
+  // the main reason the driver's side is readable at all.
+  const cluster = add(new THREE.Mesh(new THREE.PlaneGeometry(0.52, 0.21), dark(0x08080a, 1)),
     -0.44, -0.30, -0.70, 0.22);
-  for (const gx of [-0.12, 0.12]) {
-    const dial = new THREE.Mesh(
-      new THREE.RingGeometry(0.045, 0.055, 32),
-      new THREE.MeshBasicMaterial({ color: 0x2a2419, side: THREE.DoubleSide }),
+
+  const dials = [
+    { x: -0.115, tex: gaugeTexture('RPM', 8, 1), needle: 0.28 },
+    { x: 0.115, tex: gaugeTexture('MPH', 160, 20), needle: 0.0 },
+  ];
+  for (const d of dials) {
+    const face = new THREE.Mesh(
+      new THREE.CircleGeometry(0.072, 40),
+      new THREE.MeshBasicMaterial({ map: d.tex, toneMapped: false }),
     );
-    dial.position.set(gx, 0, 0.002);
-    cluster.add(dial);
+    face.position.set(d.x, 0.005, 0.004);
+    cluster.add(face);
+
+    // Needle, parked just past the pin.
+    const needle = new THREE.Mesh(
+      new THREE.BoxGeometry(0.004, 0.062, 0.002),
+      new THREE.MeshBasicMaterial({ color: 0xe4553a, toneMapped: false }),
+    );
+    needle.position.set(d.x, 0.005, 0.006);
+    needle.geometry.translate(0, 0.026, 0);
+    needle.rotation.z = (220 * Math.PI) / 180 - Math.PI / 2 - d.needle;
+    cluster.add(needle);
+
+    const rim = new THREE.Mesh(
+      new THREE.RingGeometry(0.072, 0.080, 40),
+      new THREE.MeshStandardMaterial({ color: 0x2a2622, roughness: 0.6, side: THREE.DoubleSide }),
+    );
+    rim.position.set(d.x, 0.005, 0.005);
+    cluster.add(rim);
   }
 
-  // Dashboard front wall below the pad.
-  add(new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.42, 0.05), dashMat),
-    0, -0.46, -0.79);
+  // Small warning lamps between the dials.
+  for (let i = 0; i < 3; i += 1) {
+    const lamp = new THREE.Mesh(
+      new THREE.CircleGeometry(0.006, 12),
+      new THREE.MeshBasicMaterial({
+        color: [0xe4553a, 0x7ad07a, 0xffb347][i], toneMapped: false,
+      }),
+    );
+    lamp.position.set(-0.014 + i * 0.014, -0.052, 0.005);
+    cluster.add(lamp);
+  }
+
+  // The cluster's own backlight, so it pools onto the wheel and the driver's
+  // side of the dash.
+  const clusterGlow = new THREE.PointLight(0xffb15e, 0.055, 1.1, 2);
+  clusterGlow.position.set(-0.44, -0.28, -0.60);
+  group.add(clusterGlow);
+
+  // Dashboard front wall below the pad, split around the centre stack. A
+  // single full-width panel passes straight through the turned radio and eats
+  // its left-hand side.
+  add(new THREE.Mesh(new THREE.BoxGeometry(1.10, 0.42, 0.05), dashMat),
+    -0.45, -0.46, -0.79);
+  add(new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.05), dashMat),
+    0.79, -0.46, -0.79);
 
   // ---- centre stack ----
   //
@@ -155,35 +200,104 @@ export function createInterior() {
   }
 
   // Door cards with a window aperture above them.
+  const grille = grilleTexture();
+  const grilleMat = new THREE.MeshStandardMaterial({ map: grille, roughness: 0.95 });
   for (const sx of [-1, 1]) {
     add(new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.62, 1.5), clothMat),
       sx * 0.98, -0.45, -0.25);
     add(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.42, 1.5), glassMat),
       sx * 0.98, 0.16, -0.25);
-    // Door pull.
-    add(new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.26), dark(0x141414, 0.8)),
-      sx * 0.92, -0.28, -0.30);
+
+    // Window sill / belt line.
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.045, 1.5), dark(0x191714, 0.85)),
+      sx * 0.96, -0.13, -0.25);
+
+    // Armrest with a moulded grab pull.
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.06, 0.44), dark(0x1c1a17, 0.85)),
+      sx * 0.92, -0.30, -0.28);
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.22), dark(0x121110, 0.8)),
+      sx * 0.87, -0.31, -0.34);
+
+    // Speaker grille low on the card.
+    const speaker = add(new THREE.Mesh(new THREE.CircleGeometry(0.085, 28), grilleMat),
+      sx * 0.935, -0.60, -0.42, 0, sx * -Math.PI / 2);
+    speaker.material.side = THREE.DoubleSide;
+
+    // Window switches and the door handle.
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.018, 0.10), dark(0x25231f, 0.7, 0.2)),
+      sx * 0.91, -0.255, -0.16);
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.026, 0.13), dark(0x6d6a60, 0.45, 0.75)),
+      sx * 0.91, -0.24, -0.55);
+
+    // Grab handle above the window line.
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.035, 0.20), dark(0x201d19, 0.9)),
+      sx * 0.93, 0.40, -0.10);
+
+    // Sun visor, folded up against the headliner.
+    add(new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.016, 0.19), clothMat),
+      sx * 0.40, 0.545, -1.05, 0.34);
   }
 
   // Rear bulkhead and back seat, so turning around does not show a void.
   add(new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.1, 0.08), clothMat), 0, 0.05, 0.95);
   add(new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.55, 0.24), clothMat), 0, -0.42, 0.80, 0.14);
 
-  // Passenger seat (phase 2 puts someone here).
-  const seat = new THREE.Group();
-  seat.add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.14, 0.5), clothMat));
-  const back = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.72, 0.13), clothMat);
-  back.position.set(0, 0.40, 0.24);
-  back.rotation.x = -0.16;
-  seat.add(back);
-  add(seat, 0.72, -0.78, -0.02);
+  // Seats. Bolsters and a headrest read as a seat from the corner of the eye;
+  // a bare slab does not. Phase 2 puts a passenger in the right-hand one.
+  const buildSeat = () => {
+    const seat = new THREE.Group();
+    seat.add(new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.13, 0.48), clothMat));
+    for (const bx of [-0.245, 0.245]) {
+      const bolster = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.15, 0.46), clothMat);
+      bolster.position.set(bx, 0.02, 0);
+      seat.add(bolster);
+    }
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.66, 0.12), clothMat);
+    back.position.set(0, 0.36, 0.23);
+    back.rotation.x = -0.16;
+    seat.add(back);
+    for (const bx of [-0.245, 0.245]) {
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.62, 0.17), clothMat);
+      wing.position.set(bx, 0.35, 0.20);
+      wing.rotation.x = -0.16;
+      seat.add(wing);
+    }
+    const headrest = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.15, 0.11), clothMat);
+    headrest.position.set(0, 0.76, 0.16);
+    headrest.rotation.x = -0.16;
+    seat.add(headrest);
+    return seat;
+  };
 
-  // Driver's own seat back, visible when looking over the shoulder.
-  const own = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.72, 0.13), clothMat);
-  add(own, -0.42, -0.38, 0.30, -0.16);
+  add(buildSeat(), 0.72, -0.80, -0.02);
+  add(buildSeat(), -0.52, -0.80, 0.06);
 
-  // Floor.
+  // Seatbelt webbing running down the B-pillar side of the driver's seat.
+  add(new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.62, 0.05), dark(0x141210, 1)),
+    -0.80, -0.20, 0.10, -0.10, 0, 0.12);
+
+  // Handbrake, cup holders and the glovebox seam — small things, but an empty
+  // console reads as an unfinished model.
+  const brake = add(new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.020, 0.22, 10), dark(0x1b1a18, 0.7)),
+    0.34, -0.60, -0.06, -0.75);
+  const brakeGrip = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.09, 10), dark(0x0f0e0d, 0.85));
+  brakeGrip.position.y = 0.09;
+  brake.add(brakeGrip);
+
+  for (const cz of [0.10, 0.22]) {
+    add(new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.036, 0.03, 16), dark(0x0b0b0b, 1)),
+      0.34, -0.63, cz);
+  }
+
+  // Glovebox lid on the passenger side.
+  add(new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.20, 0.03), dashMat),
+    0.84, -0.44, -0.775);
+  add(new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.02, 0.02), dark(0x6d6a60, 0.45, 0.75)),
+    0.84, -0.36, -0.76);
+
+  // Floor and a mat under the pedals.
   add(new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.06, 2.4), dark(0x0a0a0a, 1)), 0, -1.05, -0.2);
+  add(new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.02, 0.55), clothMat), -0.42, -1.01, -0.72);
 
   // ---- rear-view mirror with the dice ----
 

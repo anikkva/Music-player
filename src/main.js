@@ -5,6 +5,7 @@ import { TRACKS } from './tracks.js';
 import { createPlayer, STATUS } from './player.js';
 import { createScene, isWebGLAvailable } from './scene.js';
 import { createInterior } from './interior.js';
+import { createPassenger, createDriverLegs } from './passenger.js';
 import { createRadio } from './radio.js';
 import { createLcd } from './lcd.js';
 import { createHand } from './hand.js';
@@ -17,7 +18,6 @@ const canvas = document.getElementById('scene');
 const overlay = document.getElementById('overlay');
 const startButton = document.getElementById('start');
 const tooltipEl = document.getElementById('tooltip');
-const hud = document.getElementById('hud');
 
 if (!isWebGLAvailable()) {
   document.getElementById('unsupported').hidden = false;
@@ -31,6 +31,17 @@ function boot() {
   const { scene, camera, renderer, lcdGlow, render } = createScene(canvas);
 
   scene.add(createInterior().group);
+
+  // The driver's own knees, so the viewer is sitting in the car rather than
+  // floating in it.
+  scene.add(createDriverLegs().group);
+
+  // Passenger in the right-hand seat. Phase 2 swaps who is here by track mood;
+  // for now she is simply always there.
+  const passenger = createPassenger();
+  passenger.group.position.set(0.74, -0.66, 0.04);
+  passenger.group.rotation.y = -0.16; // turned a little toward the driver
+  scene.add(passenger.group);
 
   // ---- radio, seated in the centre stack and turned toward the driver ----
   const radio = createRadio();
@@ -139,7 +150,6 @@ function boot() {
   // until they press a control on the radio itself.
   startButton.addEventListener('click', () => {
     overlay.classList.add('hide');
-    hud.hidden = false;
     player.arm();
     lcd.flashStatus('PRESS VOL', 2200);
     setTimeout(() => { overlay.hidden = true; }, 800);

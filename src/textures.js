@@ -231,6 +231,78 @@ export function proceduralPanorama() {
   return tex;
 }
 
+/** Amber-backlit gauge face: ticks, numerals and a red line. */
+export function gaugeTexture(label, maxValue, step) {
+  const size = 512;
+  const c = canvas(size, size);
+  const ctx = c.getContext('2d');
+
+  ctx.fillStyle = '#12100c';
+  ctx.fillRect(0, 0, size, size);
+
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = size * 0.40;
+
+  // Sweep from 220 degrees round to -40 degrees.
+  const START = (220 * Math.PI) / 180;
+  const END = (-40 * Math.PI) / 180;
+  const steps = Math.round(maxValue / step);
+
+  ctx.strokeStyle = 'rgba(255, 186, 90, 0.85)';
+  ctx.fillStyle = 'rgba(255, 200, 120, 0.9)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  for (let i = 0; i <= steps; i += 1) {
+    const t = i / steps;
+    const a = START + (END - START) * t;
+    const major = i % 2 === 0;
+    const redline = t > 0.78;
+    ctx.strokeStyle = redline ? 'rgba(230, 70, 50, 0.9)' : 'rgba(255, 186, 90, 0.85)';
+    ctx.lineWidth = major ? 7 : 3;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * r, cy - Math.sin(a) * r);
+    ctx.lineTo(cx + Math.cos(a) * (r - (major ? 34 : 20)), cy - Math.sin(a) * (r - (major ? 34 : 20)));
+    ctx.stroke();
+
+    if (major) {
+      ctx.font = '600 34px ui-sans-serif, "Segoe UI", Roboto, sans-serif';
+      ctx.fillStyle = redline ? 'rgba(235, 110, 90, 0.95)' : 'rgba(255, 200, 120, 0.9)';
+      ctx.fillText(String(i * step), cx + Math.cos(a) * (r - 66), cy - Math.sin(a) * (r - 66));
+    }
+  }
+
+  ctx.font = '600 30px ui-sans-serif, "Segoe UI", Roboto, sans-serif';
+  ctx.fillStyle = 'rgba(255, 200, 120, 0.7)';
+  ctx.fillText(label, cx, cy + r * 0.52);
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
+/** Perforated speaker grille for the door cards. */
+export function grilleTexture() {
+  const size = 256;
+  const c = canvas(size, size);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#1a1815';
+  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = '#080807';
+  for (let y = 8; y < size; y += 14) {
+    for (let x = 8 + ((y / 14) % 2) * 7; x < size; x += 14) {
+      ctx.beginPath();
+      ctx.arc(x, y, 3.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 /**
  * Loads a generated panorama from assets/textures, falling back to the
  * procedural one if the file is absent or fails to decode.

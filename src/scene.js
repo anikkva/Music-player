@@ -41,23 +41,35 @@ export function createScene(canvas) {
     sky.material.needsUpdate = true;
   });
 
-  // Night cabin: almost no fill, a cold wash from the windshield, and a warm
-  // pool of light thrown by the display itself.
-  scene.add(new THREE.AmbientLight(0x3d4855, 1.15));
+  // Night cabin. It still reads as night, but every surface gets enough light
+  // to show its shape — a cabin lit only by the display was unreadable.
+  scene.add(new THREE.AmbientLight(0x4a5a72, 1.6));
 
-  const windshield = new THREE.DirectionalLight(0x9db6d0, 1.25);
+  // Cold wash coming in through the windshield.
+  const windshield = new THREE.DirectionalLight(0xa8c2dc, 1.6);
   windshield.position.set(-0.4, 1.2, -3);
   scene.add(windshield);
 
-  const streetlight = new THREE.DirectionalLight(0xffb768, 0.55);
+  // Sodium street lighting sweeping in from the right.
+  const streetlight = new THREE.DirectionalLight(0xffb768, 0.9);
   streetlight.position.set(2.5, 1.5, -1);
   scene.add(streetlight);
 
   // Fill from over the driver's shoulder. Without it the dashboard and the
   // faceplate face away from every other light and read as flat silhouettes.
-  const cabinFill = new THREE.DirectionalLight(0x93a6bb, 0.95);
+  const cabinFill = new THREE.DirectionalLight(0x9fb3c8, 1.35);
   cabinFill.position.set(0.8, 1.4, 2.2);
   scene.add(cabinFill);
+
+  // Soft dome light under the headliner: catches the seats, the door cards and
+  // the top of the dashboard, which no directional light reaches well.
+  const dome = new THREE.PointLight(0xcdd8e6, 0.55, 4.5, 2);
+  dome.position.set(0, 0.45, -0.05);
+  scene.add(dome);
+
+  // A cool bounce off the floor, so nothing bottoms out to pure black.
+  const bounce = new THREE.HemisphereLight(0x6b7f99, 0x1a1815, 0.65);
+  scene.add(bounce);
 
   // The LCD's own glow. Point lights fall off with the square of distance and
   // this one sits ~13 cm off the panel, so its intensity is small by design.
