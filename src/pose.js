@@ -105,9 +105,17 @@ export function solveChain({ chain, end, target, root, passes = 10 }) {
   const toGoal = new THREE.Vector3();
   const axis = new THREE.Vector3();
 
+  // Refreshing from the top of the chain, not from the whole figure. Descent
+  // needs up-to-date positions after every single joint it turns, and doing
+  // that against the entire model meant a few hundred full traversals of a
+  // sixty-bone skeleton per frame — which is what made reaching for the radio
+  // stutter. The arm's own subtree is all that moved.
+  const top = chain[chain.length - 1][0];
+  const refresh = () => top.updateWorldMatrix(true, true);
+
   for (let pass = 0; pass < passes; pass += 1) {
     for (const [bone, damping] of chain) {
-      root.updateWorldMatrix(true, true);
+      refresh();
       bone.getWorldPosition(jointAt);
       end.getWorldPosition(toEnd).sub(jointAt);
       toGoal.copy(target).sub(jointAt);
@@ -202,4 +210,69 @@ export function curlFingers({ fingers, toward, root, amounts = [0.42, 0.72, 0.58
       rotateWorld(joint, axis, sign * amounts[i] * scale);
     });
   }
+}
+
+/**
+ * Turns a hand so it lies along something, instead of merely arriving at it.
+ *
+ * Descent only ever controls where the wrist ends up. The palm is left facing
+ * wherever the arm happened to leave it, which is what makes a solved hand
+ * read as hovering next to a steering wheel rather than holding one — the
+ * fingers can be curled as hard as you like and it still looks wrong.
+ *
+ * Both of the hand's own axes are read off its bones, so no rig-specific
+ * knowledge is needed: the fingers run from the knuckles to the tips, and the
+ * palm faces across the line through the knuckles. They are then brought onto
+ * `along` and `facing` in that order — direction first, then roll, because
+ * rolling about the finger direction cannot disturb the direction itself.
+ */
+export function aimHand({ hand, knuckles, tips, along, facing, root }) {
+  if (!hand || knuckles.length < 2 || tips.length < 2) return;
+
+  const at = new THREE.Vector3();
+  const spanA = new THREE.Vector3();
+  const spanB = new THREE.Vector3();
+  const fingerDir = new THREE.Vector3();
+  const across = new THREE.Vector3();
+  const palm = new THREE.Vector3();
+  const axis = new THREE.Vector3();
+
+  const read = () => {
+    root.updateWorldMatrix(true, true);
+    hand.getWorldPosition(at);
+    knuckles[0].getWorldPosition(spanA);
+    knuckles[knuckles.length - 1].getWorldPosition(spanB);
+    across.copy(spanB).sub(spanA);
+
+    tips[0].getWorldPosition(spanA);
+    tips[tips.length - 1].getWorldPosition(spanB);
+    fingerDir.copy(spanA).add(spanB).multiplyScalar(0.5).sub(at);
+
+    if (across.lengthSq() < 1e-10 || fingerDir.lengthSq() < 1e-10) return false;
+    across.normalize();
+    fingerDir.normalize();
+    palm.crossVectors(across, fingerDir).normalize();
+    return true;
+  };
+
+  const turnOnto = (from, to, about) => {
+    const dot = Math.min(1, Math.max(-1, from.dot(to)));
+    const angle = Math.acos(dot);
+    if (angle < 0.01) return;
+    if (about) {
+      // Roll only: the sign comes from which side of the plane `from` sits on.
+      const signed = Math.atan2(from.clone().cross(to).dot(about), dot);
+      rotateWorld(hand, about, signed);
+      return;
+    }
+    axis.crossVectors(from, to);
+    if (axis.lengthSq() < 1e-10) return;
+    rotateWorld(hand, axis.normalize(), angle);
+  };
+
+  if (!read()) return;
+  turnOnto(fingerDir, along.clone().normalize());
+
+  if (!read()) return;
+  turnOnto(palm, facing.clone().normalize(), along.clone().normalize());
 }

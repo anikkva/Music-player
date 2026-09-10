@@ -21,23 +21,21 @@ import { WORLD_X, WORLD_Y, rotateWorld, sitDown, solveChain, curlFingers } from 
 const MODEL = 'assets/models/passenger2/passenger.glb';
 const DRACO = 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/libs/draco/';
 
-// FBXLoader keeps the colon in `mixamorig:Hips`; the glTF conversion drops it.
-const B = 'mixamorig';
+// Mixamo prefixes every bone, and not always with the same string: this
+// character's are `mixamorigHips` where the driver's are `mixamorig5Hips` —
+// the number appears when a rig is re-exported. The prefix is read off the
+// skeleton at load rather than written down here.
+let B = 'mixamorig';
 
-const HIPS = `${B}Hips`;
-const SPINE1 = `${B}Spine1`;
-const SPINE = `${B}Spine`;
-const HEAD = `${B}Head`;
-
+// Bone names without the prefix; it is added at lookup time.
 const limbs = (s) => ({
-  shoulder: `${B}${s}Shoulder`,
-  upperArm: `${B}${s}Arm`,
-  foreArm: `${B}${s}ForeArm`,
-  hand: `${B}${s}Hand`,
-  fingers: `${B}${s}Hand`,
-  upperLeg: `${B}${s}UpLeg`,
-  lowerLeg: `${B}${s}Leg`,
-  foot: `${B}${s}Foot`,
+  shoulder: `${s}Shoulder`,
+  upperArm: `${s}Arm`,
+  foreArm: `${s}ForeArm`,
+  hand: `${s}Hand`,
+  upperLeg: `${s}UpLeg`,
+  lowerLeg: `${s}Leg`,
+  foot: `${s}Foot`,
 });
 
 const LEFT = limbs('Left');
@@ -80,6 +78,9 @@ const IDLE = {
 
 const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 
+/** A bone by its unprefixed name. */
+const pick = (bones, name) => bones.get(B + name);
+
 /**
  * The direction she is facing, read off her own hips.
  *
@@ -88,8 +89,8 @@ const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
  * calls things, and forward is that crossed with up.
  */
 function facingOf(bones, into) {
-  const left = bones.get(LEFT.upperLeg);
-  const right = bones.get(RIGHT.upperLeg);
+  const left = pick(bones, LEFT.upperLeg);
+  const right = pick(bones, RIGHT.upperLeg);
   if (!left || !right) return into.set(0, 0, -1);
 
   const a = left.getWorldPosition(new THREE.Vector3());
@@ -137,8 +138,8 @@ function restHandsOnKnees(bones, root) {
   const target = new THREE.Vector3();
 
   for (const limb of [LEFT, RIGHT]) {
-    const knee = bones.get(limb.lowerLeg);
-    const hand = bones.get(limb.hand);
+    const knee = pick(bones, limb.lowerLeg);
+    const hand = pick(bones, limb.hand);
     if (!knee || !hand) continue;
 
     root.updateWorldMatrix(true, true);
@@ -149,9 +150,9 @@ function restHandsOnKnees(bones, root) {
     target.copy(at).add(new THREE.Vector3(0, 0.06, 0.08));
     solveChain({
       chain: [
-        [bones.get(limb.foreArm), 0.5],
-        [bones.get(limb.upperArm), 0.5],
-        [bones.get(limb.shoulder), 0.18],
+        [pick(bones, limb.foreArm), 0.5],
+        [pick(bones, limb.upperArm), 0.5],
+        [pick(bones, limb.shoulder), 0.18],
       ],
       end: hand,
       target,
@@ -164,8 +165,8 @@ function restHandsOnKnees(bones, root) {
     hand.getWorldPosition(at);
     curlFingers({
       fingers: FINGERS.map((finger) => ({
-        joints: [1, 2, 3].map((k) => bones.get(`${limb.fingers}${finger}${k}`)),
-        tip: bones.get(`${limb.fingers}${finger}4`),
+        joints: [1, 2, 3].map((k) => pick(bones, `${limb.hand}${finger}${k}`)),
+        tip: pick(bones, `${limb.hand}${finger}4`),
         curl: finger === 'Thumb' ? 0.4 : 1,
       })),
       toward: at.clone().add(new THREE.Vector3(0, -0.07, -0.07)),
@@ -247,6 +248,9 @@ export function createPassenger() {
       }
     });
 
+    const hips = [...bones.keys()].find((n) => n.endsWith('Hips'));
+    if (hips) B = hips.slice(0, -'Hips'.length);
+
     const wrapper = new THREE.Group();
     const standing = new THREE.Box3().setFromObject(model);
     const height = standing.getSize(new THREE.Vector3()).y;
@@ -255,10 +259,10 @@ export function createPassenger() {
     group.add(wrapper);
     group.rotation.y = Math.PI + FACING; // built facing +z; the car looks at -z
 
-    head = bones.get(HEAD) ?? null;
-    chest = bones.get(SPINE1) ?? bones.get(SPINE) ?? null;
-    kneeBone = bones.get(LEFT.lowerLeg) ?? null;
-    hipBone = bones.get(HIPS) ?? null;
+    head = pick(bones, 'Head') ?? null;
+    chest = pick(bones, 'Spine1') ?? pick(bones, 'Spine') ?? null;
+    kneeBone = pick(bones, LEFT.lowerLeg) ?? null;
+    hipBone = pick(bones, 'Hips') ?? null;
 
     // Sit her down: hip on the cushion, thighs level, heels on the floor.
     group.updateWorldMatrix(true, true);
@@ -270,12 +274,12 @@ export function createPassenger() {
     sitDown({
       legs: [
         {
-          thigh: bones.get(LEFT.upperLeg), calf: bones.get(LEFT.lowerLeg),
-          knee: bones.get(LEFT.lowerLeg), heel: bones.get(LEFT.foot), offset: -0.09,
+          thigh: pick(bones, LEFT.upperLeg), calf: pick(bones, LEFT.lowerLeg),
+          knee: pick(bones, LEFT.lowerLeg), heel: pick(bones, LEFT.foot), offset: -0.09,
         },
         {
-          thigh: bones.get(RIGHT.upperLeg), calf: bones.get(RIGHT.lowerLeg),
-          knee: bones.get(RIGHT.lowerLeg), heel: bones.get(RIGHT.foot), offset: 0.09,
+          thigh: pick(bones, RIGHT.upperLeg), calf: pick(bones, RIGHT.lowerLeg),
+          knee: pick(bones, RIGHT.lowerLeg), heel: pick(bones, RIGHT.foot), offset: 0.09,
         },
       ],
       hipAt: HIP_AT,

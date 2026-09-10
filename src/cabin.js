@@ -34,16 +34,18 @@ const CM = 0.01;
 // 72. At 127 both land where a body expects them.
 const EYE = new THREE.Vector3(48, 127, 15);
 
-// The steering wheel's bone, in the same space. The wheel geometry is baked
-// into the body mesh, so this is only ever used to park the hands.
-const WHEEL_BONE = new THREE.Vector3(48.6, 97.6, 71.3);
-const WHEEL_RADIUS = 0.205;
-const WHEEL_TILT = -0.62; // radians from vertical, a period column angle
-
-/** Model centimetres -> scene metres, with the car turned to face -z. */
-function toScene(v) {
-  return new THREE.Vector3(-(v.x - EYE.x) * CM, (v.y - EYE.y) * CM, -(v.z - EYE.z) * CM);
-}
+// The steering wheel, as an empty for the hands to be parked on.
+//
+// Measured off the rendered rim, not taken from the model's steering bone: the
+// bone sits on the column, not at the centre of the wheel, and a guess at the
+// column's angle was out by fourteen degrees. Rays were cast at four points
+// around the visible ring and a plane and centre fitted through them, which
+// put the rim seven centimetres nearer the driver and a good deal more
+// upright than the bone implied. Hands placed on the bone's version of the
+// wheel hover beside the real one, which is exactly how it looked.
+const WHEEL_AT = new THREE.Vector3(0.001, -0.265, -0.494);
+const WHEEL_RADIUS = 0.19;
+const WHEEL_TILT = -0.362; // radians from vertical
 
 /**
  * Unpacks the retired spec-gloss extension into the standard material the
@@ -100,7 +102,7 @@ export function createCabin() {
   const group = new THREE.Group();
 
   const wheel = new THREE.Group();
-  wheel.position.copy(toScene(WHEEL_BONE));
+  wheel.position.copy(WHEEL_AT);
   wheel.rotation.x = WHEEL_TILT;
   wheel.userData.rimRadius = WHEEL_RADIUS;
   group.add(wheel);

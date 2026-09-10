@@ -1,130 +1,98 @@
 // The driver — the body the camera is sitting in.
 //
-// Until now the viewer was a floating eye with a pair of hand-built hands. This
-// is a scanned, rigged man, folded into the driver's seat with his own hands on
-// the wheel, so looking down shows a body rather than a void.
+// A rigged Mixamo character, folded into the driver's seat with his own hands
+// on the wheel, so looking down shows a body rather than a void. His head is
+// collapsed rather than hidden: the camera sits inside it, and a skinned mesh
+// cannot have part of itself switched off, but scaling the head bone to
+// nothing takes the whole head with it and leaves the neck.
 //
-// His head is collapsed rather than hidden. The camera sits inside it, and a
-// skinned mesh cannot have part of itself switched off — but scaling the head
-// bone to nothing takes the whole head with it and leaves the neck intact.
+// He replaces a scan that cost 26 passes of inverse kinematics per frame
+// against a sixty-bone skeleton every time the radio was touched. That is
+// where the stutter came from, and most of the fix is in how the reach is
+// solved rather than in the model.
 //
-// Arms are solved, not keyframed. Both hands are driven to a target by cyclic
-// coordinate descent: point each bone in the chain a little more toward the
-// goal, repeat. It needs no knowledge of how the rig's bind axes are laid out,
-// which is the thing that makes hand-written euler poses so brittle, and the
-// same solver that parks a hand on the rim also carries it to a button.
+// Arms are solved, not keyframed — see pose.js. The same descent that parks a
+// hand on the rim carries it to a button, and the same finger curl that closes
+// his grip closes hers.
 
 import * as THREE from 'three';
 import { WORLD_X, rotateWorld, solveChain, sitDown, curlFingers } from './pose.js';
 
-const MODEL = 'assets/models/driver/driver.glb';
-const B = 'rp_nathan_animated_003_walking_';
+const MODEL = 'assets/models/driver/driver2.glb';
+const DRACO = 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/libs/draco/';
 
-const BONES = {
-  hip: `${B}hip_02`,
-  spine1: `${B}spine_01_03`,
-  spine2: `${B}spine_02_04`,
-  spine3: `${B}spine_03_05`,
-  neck: `${B}neck_06`,
-  head: `${B}head_07`,
-  shoulderL: `${B}shoulder_l_023`,
-  upperArmL: `${B}upperarm_l_024`,
-  lowerArmL: `${B}lowerarm_l_025`,
-  handL: `${B}hand_l_026`,
-  shoulderR: `${B}shoulder_r_048`,
-  upperArmR: `${B}upperarm_r_049`,
-  lowerArmR: `${B}lowerarm_r_050`,
-  handR: `${B}hand_r_051`,
-  upperLegL: `${B}upperleg_l_074`,
-  lowerLegL: `${B}lowerleg_l_075`,
-  footL: `${B}foot_l_076`,
-  upperLegR: `${B}upperleg_r_081`,
-  lowerLegR: `${B}lowerleg_r_082`,
-  footR: `${B}foot_r_083`,
-};
+// Materials drawn as alpha cutouts rather than solid surfaces.
+const CUTOUT = /hair|lash/i;
 
-// Finger chains, thumb first. Each is three joints plus the tip the solver
-// aims: index_01 -> index_02 -> index_03, and index_end as the fingertip.
+const FINGERS = ['Thumb', 'Index', 'Middle', 'Ring', 'Pinky'];
 
-
-// How tall he ends up, in metres. His own units are not trusted: this glTF
-// already carries a scale on its root node, so multiplying by a fixed
-// centimetre factor made him four centimetres tall. Measure, then fit.
+// How tall he ends up. His own units are not trusted — a glTF may carry a
+// scale on its root node — so he is measured and fitted.
 const TARGET_HEIGHT = 1.78;
 
-// He is anchored by the eye, not the hip. The camera cannot move, so if his
-// head lands anywhere but the origin the view ends up inside his chest. The
-// offset is from the head bone's pivot to the eyes: up the skull and forward,
-// and he faces -z.
+// The bench, the footwell, and how far he may be lifted off the eye anchor to
+// keep his lap out of the upholstery. A seated man puts his hip about 0.76 m
+// below his eyes; this cabin puts its cushion 0.65 m below them, so anchored
+// purely by the eye he sinks into the seat and his thighs — the thing you look
+// down to see — end up inside it. Lifting him leaves the camera nearer his
+// mouth than his eyes, which nobody can see, because his head is not drawn.
+const CUSHION_Y = -0.65;
+const SEAT_CLEARANCE = 0.06;
+const FLOOR_Y = -0.96;
+const MAX_LIFT = 0.18;
+
+// He is anchored by the eye: the camera cannot move, so if his head lands
+// anywhere but the origin the view ends up inside his chest. The offset runs
+// from the head bone's pivot to the eyes — up the skull and forward, and he
+// faces -z.
 const HEAD_BONE_AT = new THREE.Vector3(0, -0.085, 0.085);
 
-// The bench's cushion, and how far he may be lifted off the eye anchor to
-// keep his lap out of it.
+// A slight lean into the wheel. The scan stands bolt upright, and from that
+// posture the rim is a few centimetres beyond his fingertips.
+// Barely anything — just enough to take the parade-ground stiffness out of a
+// scan that was captured standing up.
 //
-// A 1.78 m man seated puts his hip about 0.76 m below his eyes; this cabin
-// puts its cushion 0.65 m below them. Anchored purely by the eye he sinks
-// eleven centimetres into the seat, and his thighs — the thing you look down
-// to see — are inside the upholstery. Raising him closes that: the camera ends
-// up nearer his mouth than his eyes, which nobody can see, because his head is
-// not drawn.
-const CUSHION_Y = -0.65;
+// It stays small on purpose. His head is pinned to the camera, so leaning the
+// spine does not tip him toward the wheel: it swings his body back and brings
+// his shoulders up into the frame instead. The rim is about 0.55 m from his
+// shoulder and his arm is 0.6 m, so there is nothing to lean for.
+const SPINE_LEAN = [['Spine', 0.07], ['Spine1', 0.05], ['Spine2', 0.03]];
 
-// Bodies are not points. The hip bone sits inside the pelvis, so putting the
-// bone exactly on the cushion leaves the seat of his jeans and the underside
-// of his thighs inside the upholstery. Six centimetres of clearance is about
-// the radius of a thigh and takes the intersection out of the picture.
-const SEAT_CLEARANCE = 0.06;
-const MAX_LIFT = 0.18;
-const FLOOR_Y = -0.96;
-
-// A slight lean into the wheel. His scan stands bolt upright, and from that
-// posture the rim is a few centimetres beyond his fingertips — a driver leans
-// in, and so does he.
-const SPINE_LEAN = [['spine1', 0.10], ['spine2', 0.06], ['spine3', 0.04]];
-
-// A rough first fold, only so the solver starts from something seated rather
-// than from a man standing up through the roof. The angles that matter — how
-// level the thighs are and where the heels land — are solved afterwards.
+// A rough first fold of the legs, only so the solver starts from something
+// seated. How level the thighs sit and where the heels land are solved.
 const LEG_FOLD = [
-  ['upperLegL', 1.10], ['upperLegR', 1.10],
-  ['lowerLegL', -0.60], ['lowerLegR', -0.60],
-  ['footL', -0.40], ['footR', -0.40],
+  ['LeftUpLeg', 1.10], ['RightUpLeg', 1.10],
+  ['LeftLeg', -0.60], ['RightLeg', -0.60],
 ];
 
-// Hands on the rim: ten o'clock and four o'clock, matching where the radio is.
-const RIM_ANGLES = { left: (150 * Math.PI) / 180, right: (-52 * Math.PI) / 180 };
-const RIM_LIFT = 0.03;
+// Where his hands rest: on his thighs, not on the wheel.
+//
+// They were on the rim, and the rim is where they belong on a real driver —
+// but the camera sits inside this man's own head, so his forearms cross the
+// frame at arm's length and read as two pale slabs over the dashboard however
+// well the hands are placed. The wheel is close enough to the camera that his
+// arms fill more of the view than the road does.
+//
+// Resting them low costs nothing that matters: from the driver's eyes a real
+// person mostly sees their own knees anyway, and the arm still comes up — into
+// an otherwise clear frame, which makes the gesture read — whenever he reaches
+// for the radio.
+const LAP = { left: new THREE.Vector3(-0.17, -0.60, -0.30), right: new THREE.Vector3(0.17, -0.60, -0.30) };
 
 const REACH_MS = 420;
 const RETURN_MS = 360;
 const TOUCH_GAP = 0.02;
 
+// Passes of descent per frame while reaching. Modest on purpose: the goal
+// moves only a little between frames and each solve starts from the last one,
+// so ten passes track it as well as twenty-six did — and the solver now
+// refreshes only the arm's own subtree rather than the whole figure, which is
+// where the stutter came from.
+const REACH_PASSES = 20;
+const SETTLE_PASSES = 40; // once, when he first takes the wheel, so it can converge
+
 const easeOut = (t) => 1 - (1 - t) ** 3;
 const easeIn = (t) => t * t;
-
-/**
- * Finds the finger chains for one hand.
- *
- * By pattern, not by arithmetic: the rig numbers its joints consecutively
- * almost everywhere, and then does not — the left middle finger's first joint
- * is `middle_01_l_00` where every neighbour would predict `_035`. Names are
- * the only thing that can be trusted.
- */
-function handFingers(bones, side) {
-  const s = side === 'left' ? 'l' : 'r';
-  const names = [...bones.keys()];
-  const pick = (finger, part) => {
-    const re = new RegExp(`_${finger}_${part}_${s}_\\d+$`);
-    return bones.get(names.find((n) => re.test(n)));
-  };
-
-  return ['thumb', 'index', 'middle', 'ring', 'pinky'].map((finger) => ({
-    joints: ['01', '02', '03'].map((k) => pick(finger, k)),
-    tip: pick(finger, 'end'),
-    // The thumb closes across the rim rather than around it, so it curls less.
-    curl: finger === 'thumb' ? 0.45 : 1,
-  }));
-}
 
 /**
  * @param wheel the empty standing in for the steering wheel; its rim radius
@@ -133,139 +101,166 @@ function handFingers(bones, side) {
 export function createDriver({ wheel }) {
   const group = new THREE.Group();
   const bones = new Map();
-  const bone = (key) => bones.get(BONES[key]);
 
-  let ready = null;
-  let anim = null;      // an active reach, or null while both hands rest
+  // Mixamo prefixes every bone, but not always with the same string: this
+  // character's are `mixamorig5Hips` where the passenger's are `mixamorigHips`
+  // — the number appears when a rig is re-exported. It is read off the
+  // skeleton rather than written down.
+  let prefix = 'mixamorig';
+  const bone = (name) => bones.get(prefix + name);
+
+  let anim = null; // an active reach, or null while both hands rest
   const restRight = new THREE.Vector3();
   const goal = new THREE.Vector3();
 
-  // The posture he returns to. Every frame of a reach is solved from this
-  // rather than from the frame before: descent applied on top of itself
-  // accumulates, and he ends a press permanently hunched over the console with
-  // his shoulder filling the frame.
+  // The posture he returns to, and where the reach chain was when it started.
   const restPose = new Map();
-  const rememberRest = (chain) => {
-    for (const [b] of chain) if (b && !restPose.has(b)) restPose.set(b, b.quaternion.clone());
-  };
-  const recallRest = (chain) => {
-    for (const [b] of chain) { const q = restPose.get(b); if (q) b.quaternion.copy(q); }
-  };
 
-  /** The world point a hand rests at on the rim. */
-  function rimPoint(side, into) {
-    const a = RIM_ANGLES[side];
-    const r = wheel.userData.rimRadius ?? 0.2;
-    into.set(Math.cos(a) * r, Math.sin(a) * r, RIM_LIFT);
-    wheel.updateWorldMatrix(true, false);
-    return into.applyMatrix4(wheel.matrixWorld);
-  }
+  /** Where a hand rests, in world space. */
+  const restPoint = (side, into) => into.copy(LAP[side]);
 
-  /** The arm alone — enough to park a hand on the rim. */
-  function armChain(side) {
-    return side === 'left'
-      ? [[bone('lowerArmL'), 0.5], [bone('upperArmL'), 0.5], [bone('shoulderL'), 0.4]]
-      : [[bone('lowerArmR'), 0.5], [bone('upperArmR'), 0.5], [bone('shoulderR'), 0.4]];
-  }
+  // Arm only, deliberately. Both arms share a spine, so a chain that includes
+  // it solves the right hand by dragging the left one off the rim it was just
+  // placed on. The lean that brings the wheel into reach is set once, up
+  // front, and then left alone.
+  const armChain = (s) => [
+    [bone(`${s}ForeArm`), 0.5], [bone(`${s}Arm`), 0.5], [bone(`${s}Shoulder`), 0.4],
+  ];
 
   /**
-   * The arm plus the back. The radio is about 0.9 m from his shoulder and his
-   * arm is 0.6 m long, so without the spine he waves at it from a distance;
-   * with it, he leans over the way anyone reaching across a car does.
+   * The arm and nothing else, deliberately, and it does not quite reach.
+   *
+   * The radio sits about 0.85 m from his shoulder and his arm is 0.6 m long,
+   * so touching it needs a quarter of a metre from somewhere else. Both places
+   * that could supply it make the shot worse, and measurably so: bending the
+   * spine swings his chest at the lens, and rolling the shoulder puts it
+   * there directly — at maximum extension it filled the entire frame. The
+   * camera sits about twenty centimetres from his own shoulder, so anything
+   * that moves his upper body toward the dash moves it into the lens instead.
+   *
+   * So the arm goes out on its own and stops short. From the driver's seat it
+   * reads as reaching for the radio, the button still depresses under it, and
+   * nothing crosses the view. Getting the last quarter metre honestly would
+   * mean either mounting the radio within arm's reach or letting the camera
+   * travel with his head, and both are larger decisions than a damping value.
    */
-  function reachChain() {
-    // Weighted so the elbow does the work. The shoulder and the upper arm are
-    // the parts closest to the camera, and letting them swing sends a mass of
-    // forearm across the middle of the frame just as the driver is trying to
-    // watch what he is pressing. Descent still reaches the button — damping
-    // changes how fast each joint gives, not where the hand can end up — it
-    // just gets there by bending an elbow and leaning, which is what a person
-    // does anyway.
-    return [
-      [bone('lowerArmR'), 0.70],
-      [bone('upperArmR'), 0.30],
-      [bone('shoulderR'), 0.06],
-      [bone('spine3'), 0.12], [bone('spine2'), 0.10], [bone('spine1'), 0.08],
-    ];
-  }
+  const reachChain = () => [
+    [bone('RightForeArm'), 0.60],
+    [bone('RightArm'), 0.50],
+  ];
 
-  ready = (async () => {
-    const { GLTFLoader } = await import(
-      'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/loaders/GLTFLoader.js');
-    const gltf = await new GLTFLoader().loadAsync(MODEL);
-    const model = gltf.scene;
+  const handFingers = (s) => FINGERS.map((finger) => ({
+    joints: [1, 2, 3].map((k) => bone(`${s}Hand${finger}${k}`)),
+    tip: bone(`${s}Hand${finger}4`),
+    // The thumb closes across the rim rather than around it.
+    curl: finger === 'Thumb' ? 0.45 : 1,
+  }));
+
+  const ready = (async () => {
+    const [{ GLTFLoader }, { DRACOLoader }] = await Promise.all([
+      import('https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/loaders/GLTFLoader.js'),
+      import('https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/loaders/DRACOLoader.js'),
+    ]);
+    const draco = new DRACOLoader();
+    draco.setDecoderPath(DRACO);
+    const loader = new GLTFLoader();
+    loader.setDRACOLoader(draco);
+
+    const model = (await loader.loadAsync(MODEL)).scene;
 
     model.traverse((o) => {
       if (o.isBone) bones.set(o.name, o);
-      if (o.isMesh) o.frustumCulled = false;
+      if (!o.isMesh) return;
+
+      o.frustumCulled = false; // wrong skinned bounds pop him out of frame
+
+      // Hair and eyelashes are alpha cutouts on flat cards. The FBX-to-glTF
+      // conversion drops the transparency setting and leaves the material's
+      // alpha factor at zero, which cuts the whole head of hair away. Alpha
+      // has to come from the texture and nothing else.
+      for (const material of Array.isArray(o.material) ? o.material : [o.material]) {
+        if (!material?.map || !CUTOUT.test(material.name ?? '')) continue;
+        material.opacity = 1;
+        material.alphaTest = 0.5;
+        material.transparent = false; // a cutout, not a blend
+        material.side = THREE.DoubleSide;
+        material.needsUpdate = true;
+      }
     });
 
-    // The walk animation is never played: he is sitting down.
+    const hips = [...bones.keys()].find((n) => n.endsWith('Hips'));
+    if (hips) prefix = hips.slice(0, -'Hips'.length);
+
     const wrapper = new THREE.Group();
     const standing = new THREE.Box3().setFromObject(model);
     const height = standing.getSize(new THREE.Vector3()).y;
     wrapper.scale.setScalar(height > 0 ? TARGET_HEIGHT / height : 1);
     wrapper.add(model);
     group.add(wrapper);
-    group.rotation.y = Math.PI; // scanned facing +z, the car looks at -z
+    group.rotation.y = Math.PI; // built facing +z; the car looks at -z
 
     group.updateWorldMatrix(true, true);
-    for (const [key, angle] of [...SPINE_LEAN, ...LEG_FOLD]) {
-      const b = bone(key);
+    for (const [name, angle] of [...SPINE_LEAN, ...LEG_FOLD]) {
+      const b = bone(name);
       if (!b) continue;
       b.updateWorldMatrix(true, false);
       rotateWorld(b, WORLD_X, angle);
     }
 
-    // Put his eyes where the camera is.
+    // Put his eyes where the camera is, then lift him until his lap clears
+    // the cushion.
     group.updateWorldMatrix(true, true);
-    const head = bone('head');
+    const head = bone('Head');
     if (head) {
       group.position.add(HEAD_BONE_AT.clone().sub(head.getWorldPosition(new THREE.Vector3())));
     }
 
-    // Lift him until his lap clears the cushion.
     group.updateWorldMatrix(true, true);
-    const sunk = (CUSHION_Y + SEAT_CLEARANCE) - bone('hip').getWorldPosition(new THREE.Vector3()).y;
-    if (sunk > 0) group.position.y += Math.min(sunk, MAX_LIFT);
+    const hipBone = bone('Hips');
+    if (hipBone) {
+      const sunk = (CUSHION_Y + SEAT_CLEARANCE)
+        - hipBone.getWorldPosition(new THREE.Vector3()).y;
+      if (sunk > 0) group.position.y += Math.min(sunk, MAX_LIFT);
+    }
 
-    // Thighs level and heels down, measured against this cabin's seat.
     group.updateWorldMatrix(true, true);
-    const hipAt = bone('hip').getWorldPosition(new THREE.Vector3());
     sitDown({
       legs: [
-        { thigh: bone('upperLegL'), calf: bone('lowerLegL'),
-          knee: bone('lowerLegL'), heel: bone('footL'), offset: -0.11 },
-        { thigh: bone('upperLegR'), calf: bone('lowerLegR'),
-          knee: bone('lowerLegR'), heel: bone('footR'), offset: 0.11 },
+        {
+          thigh: bone('LeftUpLeg'), calf: bone('LeftLeg'),
+          knee: bone('LeftLeg'), heel: bone('LeftFoot'), offset: -0.11,
+        },
+        {
+          thigh: bone('RightUpLeg'), calf: bone('RightLeg'),
+          knee: bone('RightLeg'), heel: bone('RightFoot'), offset: 0.11,
+        },
       ],
-      hipAt,
+      hipAt: hipBone
+        ? hipBone.getWorldPosition(new THREE.Vector3())
+        : new THREE.Vector3(0, CUSHION_Y, 0),
       floorY: FLOOR_Y,
       root: group,
     });
 
-    // The camera lives inside his skull, so the skull has to go. Collapsing
-    // the bone takes the head with it and leaves the neck.
+    // The camera lives inside his skull, so the skull has to go.
     if (head) head.scale.setScalar(0.001);
 
-    rimPoint('left', goal);
-    solveChain({ chain: armChain('left'), end: bone('handL'), target: goal, root: group, passes: 24 });
-    rimPoint('right', restRight);
-    solveChain({ chain: armChain('right'), end: bone('handR'), target: restRight, root: group, passes: 24 });
-
-    // Close both hands around the rim. The arms put the palms there; this is
-    // what makes it read as holding the wheel rather than touching it. The
-    // fingers close toward a point just behind the rim, so the curl wraps it
-    // instead of stopping short.
-    const behind = new THREE.Vector3(0, 0, 1)
-      .applyQuaternion(wheel.getWorldQuaternion(new THREE.Quaternion()))
-      .multiplyScalar(-0.05);
-    for (const side of ['left', 'right']) {
-      const toward = rimPoint(side, new THREE.Vector3()).add(behind);
-      curlFingers({ fingers: handFingers(bones, side), toward, root: group });
+    // Both hands down onto his thighs, fingers loosely closed.
+    for (const [key, s] of [['left', 'Left'], ['right', 'Right']]) {
+      const at = restPoint(key, new THREE.Vector3());
+      solveChain({
+        chain: armChain(s), end: bone(`${s}Hand`), target: at, root: group, passes: SETTLE_PASSES,
+      });
+      curlFingers({
+        fingers: handFingers(s),
+        toward: at.clone().add(new THREE.Vector3(0, -0.06, -0.06)),
+        root: group,
+        amounts: [0.30, 0.45, 0.35],
+      });
     }
 
-    rememberRest(reachChain());
+    for (const [b] of reachChain()) if (b) restPose.set(b, b.quaternion.clone());
+    restPoint('right', restRight);
 
     return group;
   })();
@@ -275,9 +270,15 @@ export function createDriver({ wheel }) {
    * arrives — the caller fires the action on contact, as the spec requires.
    */
   function reachTo(target, normal) {
-    if (!bone('handR') || anim) return Promise.resolve(false);
+    const hand = bone('RightHand');
+    if (!hand || anim) return Promise.resolve(false);
     return new Promise((resolve) => {
       anim = {
+        // From where the hand actually is, not from where it was meant to
+        // rest. Descent leaves it wherever it converged, and interpolating
+        // from an imagined start makes the first half of the reach a fight to
+        // catch up with a goal that has already left.
+        from: hand.getWorldPosition(new THREE.Vector3()),
         target: target.clone().addScaledVector(normal, TOUCH_GAP),
         startedAt: performance.now(),
         touched: false,
@@ -287,32 +288,34 @@ export function createDriver({ wheel }) {
   }
 
   function update(now) {
-    if (!anim || !bone('handR')) return;
+    if (!anim || !bone('RightHand')) return;
 
-    rimPoint('right', restRight);
     const elapsed = now - anim.startedAt;
-    let t;
 
     if (elapsed < REACH_MS) {
-      t = easeOut(elapsed / REACH_MS);
+      goal.lerpVectors(anim.from, anim.target, easeOut(elapsed / REACH_MS));
     } else if (!anim.touched) {
       anim.touched = true;
-      t = 1;
+      goal.copy(anim.target);
       anim.resolve?.(true);
     } else {
       const back = (elapsed - REACH_MS) / RETURN_MS;
       if (back >= 1) {
+        // Snap the last of the way home. Solving back to the rim leaves a
+        // little drift each time; the remembered posture does not.
+        for (const [b, q] of restPose) b.quaternion.copy(q);
         anim = null;
-        recallRest(reachChain());
         return;
       }
-      t = 1 - easeIn(back);
+      goal.lerpVectors(anim.from, anim.target, 1 - easeIn(back));
     }
 
-    goal.lerpVectors(restRight, anim.target, t);
-    const chain = reachChain();
-    recallRest(chain);
-    solveChain({ chain, end: bone('handR'), target: goal, root: group, passes: 26 });
+    // Solved from wherever the arm is, not from the rest pose: the goal moves
+    // only slightly between frames, so a few passes track it, and there is no
+    // full re-solve to pay for sixty times a second.
+    solveChain({
+      chain: reachChain(), end: bone('RightHand'), target: goal, root: group, passes: REACH_PASSES,
+    });
   }
 
   return {
