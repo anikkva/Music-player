@@ -15,6 +15,7 @@
 // hip lands where the seat cushion is.
 
 import * as THREE from 'three';
+import { WORLD_X, rotateWorld, sitDown } from './pose.js';
 
 const MODEL = 'assets/models/passenger/passenger.fbx';
 const TEX = 'assets/models/passenger/textures/';
@@ -48,15 +49,9 @@ const MAPS = {
   Female_Angled_Base: ['fab.jpg', 'fab_a.jpg'],
 };
 
-// The seated pose. Two tables, because the two halves of the rig need
-// different treatment.
-//
-// The legs are folded with rotations about the WORLD x axis. Character
-// Creator binds limb bones with a half turn about their own z, so which local
-// euler bends a knee forward is not something to reason about — it is
-// something to measure. In world terms it is simply "swing the thigh forward,
-// drop the shin": one axis, signs found by watching where the joint lands.
-// Order matters, and the world matrix has to be refreshed between links.
+// A rough first fold of the legs, about the world x axis, only so the solver
+// in pose.js starts from something seated. How level her thighs sit and where
+// her heels land are solved against the cabin afterwards.
 // The knees ride high and the heels tuck back, because they have to: the
 // Impala's cushion sits 0.50 m below the driver's eye and its floorpan only
 // 0.31 m below that. Sitting with the shins vertical, as in a modern car, puts
@@ -87,50 +82,15 @@ const POSE = {
   CC_Base_NeckTwist01: [-0.06, 0, 0],
 };
 
-const WORLD_X = new THREE.Vector3(1, 0, 0);
-
-/**
- * Straightens or folds the shins until her heels rest on the floor.
- *
- * Hard-coding a knee angle only works for one cabin. This one is solved:
- * measure where the foot actually ended up, bend the knee by roughly the angle
- * that closes the gap, and repeat. It converges in a handful of passes and
- * costs nothing, since it runs once when the model loads.
- */
-function standHeelsOnFloor(bones, group) {
-  const calves = ['CC_Base_L_Calf', 'CC_Base_R_Calf'].map((n) => bones.get(n));
-  const foot = bones.get('CC_Base_L_Foot');
-  if (!foot || calves.some((c) => !c)) return;
-
-  const target = FLOOR_Y + HEEL_CLEARANCE;
-  const at = new THREE.Vector3();
-
-  for (let pass = 0; pass < 12; pass += 1) {
-    group.updateWorldMatrix(true, true);
-    foot.getWorldPosition(at);
-    const gap = target - at.y;
-    if (Math.abs(gap) < 0.005) break;
-
-    // ~3 radians of knee per metre of heel, measured off the rig, and never
-    // more than a tenth of a radian at a time so it cannot overshoot.
-    const step = Math.max(-0.1, Math.min(0.1, gap * 3));
-    for (const calf of calves) {
-      calf.updateWorldMatrix(true, false);
-      calf.rotateOnWorldAxis(WORLD_X, step);
-    }
-  }
-}
-
 // The floor of the footwell, and how close to it her heels should settle.
 // Her shins are straightened against this after the pose is applied, so she
 // keeps her feet on the floor even if the cabin under her changes.
-const FLOOR_Y = -0.81;
-const HEEL_CLEARANCE = 0.02;
+const FLOOR_Y = -0.96;
 
 // Where her hip sits, and how far she is turned toward the driver.
 // Measured, not guessed: rays dropped onto the bench put its cushion at
-// y = -0.50 over z = -0.35..0.05, with the backrest starting at z = 0.05.
-const HIP_AT = new THREE.Vector3(0.90, -0.46, -0.06);
+// y = -0.65 over z = -0.35..0.05, with the backrest starting at z = 0.05.
+const HIP_AT = new THREE.Vector3(0.90, -0.61, -0.06);
 const FACING = -0.20;
 
 // How far the head turns to look at the driver, and how long it takes.
@@ -239,7 +199,7 @@ export function createPassenger() {
       const bone = bones.get(name);
       if (!bone) continue;
       bone.updateWorldMatrix(true, false);
-      bone.rotateOnWorldAxis(WORLD_X, angle);
+      rotateWorld(bone, WORLD_X, angle);
     }
 
     // Sit her down by measuring rather than by guessing: put the hip bone
@@ -251,7 +211,19 @@ export function createPassenger() {
       group.position.add(HIP_AT.clone().sub(at));
     }
 
-    standHeelsOnFloor(bones, group);
+    // Thighs level and heels down, measured against this cabin's bench.
+    group.updateWorldMatrix(true, true);
+    sitDown({
+      legs: [
+        { thigh: bones.get('CC_Base_L_Thigh'), calf: bones.get('CC_Base_L_Calf'),
+          knee: bones.get('CC_Base_L_Calf'), heel: bones.get('CC_Base_L_Foot'), offset: -0.09 },
+        { thigh: bones.get('CC_Base_R_Thigh'), calf: bones.get('CC_Base_R_Calf'),
+          knee: bones.get('CC_Base_R_Calf'), heel: bones.get('CC_Base_R_Foot'), offset: 0.09 },
+      ],
+      hipAt: HIP_AT,
+      floorY: FLOOR_Y,
+      root: group,
+    });
 
     return group;
   })();

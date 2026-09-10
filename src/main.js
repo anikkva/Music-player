@@ -9,7 +9,7 @@ import { createDriving } from './driving.js';
 import { createPassenger } from './passenger.js';
 import { createRadio } from './radio.js';
 import { createLcd } from './lcd.js';
-import { createHands } from './hand.js';
+import { createDriver } from './driver.js';
 import { createCameraRig } from './camera.js';
 import { createInteraction } from './interaction.js';
 import { angleToVolume, volumeToAngle, MIN_ANGLE, MAX_ANGLE } from './knob.js';
@@ -62,8 +62,10 @@ function boot() {
   radio.lcdMesh.material.map = lcd.texture;
   radio.lcdMesh.material.needsUpdate = true;
 
-  // Hands: both resting on the wheel, the right one leaving it for the radio.
-  const hands = createHands({ wheel: cabin.wheel, scene });
+  // The driver's own body, with his hands on the wheel. The camera sits
+  // inside his head, which is collapsed so it does not fill the frame.
+  const driver = createDriver({ wheel: cabin.wheel });
+  scene.add(driver.group);
 
   // The faceplate's outward normal, which is the direction a fingertip
   // approaches a control from.
@@ -143,10 +145,10 @@ function boot() {
 
   async function activate(controlId) {
     if (controlId === 'tuneKnob') return; // handled by dragging, not clicking
-    if (hands.isBusy() || hands.isHolding()) return;
+    if (driver.isBusy()) return;
 
     interaction.setBusy(true);
-    const touched = await hands.pressAt(...aimAt(controlId));
+    const touched = await driver.reachTo(...aimAt(controlId));
     if (touched) {
       // The action fires on contact, not on click.
       radio.pressButton(controlId);
@@ -165,12 +167,11 @@ function boot() {
     onActivate: activate,
     onKnobDelta: (id, delta, phase) => {
       if (id !== 'tuneKnob') return;
-      if (phase.grab) hands.grabAt(radio.worldPositionOf('tuneKnob'), faceNormal);
-      if (phase.release) { hands.release(); return; }
-      if (delta) {
-        applyKnobDelta(delta);
-        hands.setGrabSpin(-knobAngle);
-      }
+      // Dragging the knob does not send the hand out: it is a continuous
+      // gesture, and an arm solving to a new target every frame reads as a
+      // twitch rather than as turning a dial.
+      if (phase.grab || phase.release) return;
+      if (delta) applyKnobDelta(delta);
     },
   });
 
@@ -190,7 +191,7 @@ function boot() {
   });
 
   // Debug handle, handy when checking framing from the console.
-  window.__player = { camera, radio, cameraRig, scene, player, renderer, render, lcd, hands, passenger, interaction };
+  window.__player = { camera, radio, cameraRig, scene, player, renderer, render, lcd, driver, passenger, interaction };
 
   // ---- frame loop ----
   const clock = new THREE.Clock();
@@ -204,7 +205,7 @@ function boot() {
     cabin.wheel.rotation.z = driving.steer(now);
     cameraRig.update(now);
     radio.update(now);
-    hands.update(now);
+    driver.update(now);
     passenger.update(now);
     lcd.update(now);
 

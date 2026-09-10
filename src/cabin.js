@@ -25,10 +25,14 @@ const MODEL = 'assets/models/cabin/impala.glb';
 
 const CM = 0.01;
 
-// The driver's eye point, in the model's own centimetres. Cast rays from here
-// and the roof is 37 cm up, the seat back 18 cm behind, the driver's door glass
-// 42 cm to the left and the windshield 98 cm ahead.
-const EYE = new THREE.Vector3(48, 112, 15);
+// The driver's eye point, in the model's own centimetres, found by casting
+// rays inside the cabin and checking the answers against a person.
+//
+// The first guess sat 15 cm low. Two measurements caught it: the roof came
+// back 37 cm above the eye, where a head with a little clearance wants about
+// 20, and the seat cushion 50 cm below, where a seated adult's hip sits about
+// 72. At 127 both land where a body expects them.
+const EYE = new THREE.Vector3(48, 127, 15);
 
 // The steering wheel's bone, in the same space. The wheel geometry is baked
 // into the body mesh, so this is only ever used to park the hands.

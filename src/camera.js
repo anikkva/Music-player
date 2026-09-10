@@ -36,7 +36,7 @@ function shakeAt(now) {
 // Distance from the driver's eyes to the faceplate, and the half-extents of
 // the framed region at each end of the zoom range. Near: the radio plus its
 // bezel with a margin. Far: the whole cabin ahead of the driver.
-const RADIO_DISTANCE = 0.951;
+const RADIO_DISTANCE = 0.980;
 const NEAR_HALF = { w: 0.115, h: 0.070 };
 const FAR_HALF = { w: 1.03, h: 0.60 };
 
