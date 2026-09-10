@@ -174,9 +174,18 @@ export function createDriver({ wheel }) {
    * with it, he leans over the way anyone reaching across a car does.
    */
   function reachChain() {
+    // Weighted so the elbow does the work. The shoulder and the upper arm are
+    // the parts closest to the camera, and letting them swing sends a mass of
+    // forearm across the middle of the frame just as the driver is trying to
+    // watch what he is pressing. Descent still reaches the button — damping
+    // changes how fast each joint gives, not where the hand can end up — it
+    // just gets there by bending an elbow and leaning, which is what a person
+    // does anyway.
     return [
-      [bone('lowerArmR'), 0.5], [bone('upperArmR'), 0.5], [bone('shoulderR'), 0.4],
-      [bone('spine3'), 0.26], [bone('spine2'), 0.20], [bone('spine1'), 0.15],
+      [bone('lowerArmR'), 0.70],
+      [bone('upperArmR'), 0.30],
+      [bone('shoulderR'), 0.06],
+      [bone('spine3'), 0.12], [bone('spine2'), 0.10], [bone('spine1'), 0.08],
     ];
   }
 
@@ -303,7 +312,7 @@ export function createDriver({ wheel }) {
     goal.lerpVectors(restRight, anim.target, t);
     const chain = reachChain();
     recallRest(chain);
-    solveChain({ chain, end: bone('handR'), target: goal, root: group, passes: 14 });
+    solveChain({ chain, end: bone('handR'), target: goal, root: group, passes: 26 });
   }
 
   return {

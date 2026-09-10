@@ -15,7 +15,7 @@
 // hip lands where the seat cushion is.
 
 import * as THREE from 'three';
-import { WORLD_X, rotateWorld, sitDown, solveChain, curlFingers } from './pose.js';
+import { WORLD_X, WORLD_Y, rotateWorld, sitDown, solveChain, curlFingers } from './pose.js';
 
 const MODEL = 'assets/models/passenger/passenger.fbx';
 const TEX = 'assets/models/passenger/textures/';
@@ -97,12 +97,17 @@ const FLOOR_Y = -0.96;
 const HIP_AT = new THREE.Vector3(0.90, -0.59, -0.06);
 const FACING = -0.20;
 
-// How far the head turns to look at the driver, how long the turn takes, and
-// how long she holds it. The hold is deliberately long: a glance that snaps
-// back reads as a twitch, a look that lingers reads as a question.
-const LOOK_YAW = 0.62;
+// How long the turn takes, and how far the head may be asked to go. How far
+// it actually goes is worked out at load from where the driver is sitting: a
+// written-in angle was 35 degrees, which turned her head without ever pointing
+// her eyes at anybody.
 const LOOK_TILT = 0.10;   // a slight cock of the head, which is what asks it
 const LOOK_MS = 520;
+// A neck turns about 65 degrees and no further; past that a person brings
+// their shoulders round. She is sitting 108 degrees off the driver, so both
+// are needed, and the chest takes whatever the neck cannot.
+const NECK_MAX = 1.15;
+const CHEST_MAX = 0.45;
 
 // She is never quite still. Breathing is the slow one; the rest is the small
 // constant settling anyone does in a moving car. Amplitudes are radians.
@@ -136,6 +141,80 @@ function surface(loader, [colour, alpha]) {
     material.depthWrite = true;
   }
   return material;
+}
+
+/**
+ * How far she has to turn to actually look at the driver, split between neck
+ * and shoulders.
+ *
+ * Her gaze runs from the head bone out to the midpoint of her eyes; the driver
+ * is at the origin, because that is where the camera is. The turn is found by
+ * stepping — apply some, measure what is left, apply the correction — for the
+ * same reason as everything else here: the relationship between an angle asked
+ * for and the angle that results depends on the rig, and this one turns out
+ * not to be one to one.
+ *
+ * The turn is applied about the world vertical. Her skull bone's local z is
+ * not up, so writing a local euler moves her head somewhere, but not toward
+ * anyone.
+ */
+function solveLookAngles(head, chest, bones, root) {
+  const eyeL = bones.get('CC_Base_L_Eye');
+  const eyeR = bones.get('CC_Base_R_Eye');
+  if (!head || !eyeL || !eyeR) return { neck: 0, chest: 0 };
+
+  const eyes = new THREE.Vector3();
+  const skull = new THREE.Vector3();
+  const gaze = new THREE.Vector3();
+  const toDriver = new THREE.Vector3();
+  const headBind = head.quaternion.clone();
+  const chestBind = chest ? chest.quaternion.clone() : null;
+
+  const offBy = () => {
+    root.updateWorldMatrix(true, true);
+    eyeL.getWorldPosition(eyes);
+    eyeR.getWorldPosition(gaze);
+    eyes.add(gaze).multiplyScalar(0.5);
+    head.getWorldPosition(skull);
+
+    gaze.copy(eyes).sub(skull);
+    gaze.y = 0;
+    toDriver.copy(eyes).negate();
+    toDriver.y = 0;
+    if (gaze.lengthSq() < 1e-10 || toDriver.lengthSq() < 1e-10) return 0;
+    gaze.normalize();
+    toDriver.normalize();
+    return Math.atan2(gaze.x * toDriver.z - gaze.z * toDriver.x, gaze.dot(toDriver));
+  };
+
+  const apply = (neck, torso) => {
+    if (chest && chestBind) {
+      chest.quaternion.copy(chestBind);
+      rotateWorld(chest, WORLD_Y, torso);
+    }
+    head.quaternion.copy(headBind);
+    rotateWorld(head, WORLD_Y, neck);
+  };
+
+  let total = 0;
+  for (let pass = 0; pass < 10; pass += 1) {
+    apply(Math.max(-NECK_MAX, Math.min(NECK_MAX, total)), 0);
+    const error = offBy();
+    if (Math.abs(error) < 0.02) break;
+
+    apply(Math.max(-NECK_MAX, Math.min(NECK_MAX, total + 0.15)), 0);
+    const response = (offBy() - error) / 0.15;
+    if (Math.abs(response) < 0.05) break;
+
+    total -= error / response;
+    if (Math.abs(total) > 4) break;
+  }
+
+  apply(0, 0);
+
+  const neck = Math.max(-NECK_MAX, Math.min(NECK_MAX, total));
+  const left = total - neck;
+  return { neck, chest: Math.max(-CHEST_MAX, Math.min(CHEST_MAX, left)) };
 }
 
 /**
@@ -195,7 +274,18 @@ function restHandsOnKnees(bones, root) {
  */
 export function createPassenger() {
   const group = new THREE.Group();
+
+  // Bones by name — but this model carries eight separate copies of its
+  // skeleton, one per mesh, so 46 of its 101 names appear more than once. Left
+  // to a plain last-one-wins map, `CC_Base_Head` resolved to a childless
+  // duplicate that drives no geometry at all: her head turned, in the sense
+  // that a number changed, and nothing on screen moved.
+  //
+  // `bones` holds the richest instance of each name — the one the rest of the
+  // skeleton hangs off — and `copies` holds them all, so a pose can be echoed
+  // to the duplicates that the hair and the clothes are bound to.
   const bones = new Map();
+  const copies = new Map();
 
   // A small invisible ball on her knee, for the raycaster to hit.
   //
@@ -207,17 +297,19 @@ export function createPassenger() {
   const knee = new THREE.Mesh(
     // Generous: it stands in for a knee and the top of a thigh, and the head
     // it is being clicked from is never quite still.
-    new THREE.SphereGeometry(0.15, 12, 10),
+    new THREE.SphereGeometry(0.20, 12, 10),
     new THREE.MeshBasicMaterial({ visible: false }),
   );
   knee.userData.control = 'knee';
 
   let head = null;
+  let lookNeck = 0;    // both replaced by measured values once she is seated
+  let lookChest = 0;
   let kneeBone = null;
+  let hipBone = null;
   let chest = null;
-  let headBindZ = 0;
-  let headBindX = 0;
-  let chestBindX = 0;
+  let headBindQ = null;
+  let chestBindQ = null;
   let lookStartedAt = 0;
   let lookTarget = 0;   // 0 = out of the window, 1 = at the driver
   let lookFrom = 0;
@@ -230,8 +322,15 @@ export function createPassenger() {
     const loader = new THREE.TextureLoader();
     const materials = new Map();
 
+    const weight = (bone) => { let n = 0; bone.traverse(() => { n += 1; }); return n; };
+
     model.traverse((o) => {
-      if (o.isBone) bones.set(o.name, o);
+      if (o.isBone) {
+        if (!copies.has(o.name)) copies.set(o.name, []);
+        copies.get(o.name).push(o);
+        const held = bones.get(o.name);
+        if (!held || weight(o) > weight(held)) bones.set(o.name, o);
+      }
       if (!o.isMesh) return;
 
       o.visible = !HIDDEN_MESHES.includes(o.name);
@@ -251,14 +350,12 @@ export function createPassenger() {
     }
 
     head = bones.get('CC_Base_Head') ?? null;
-    if (head) {
-      headBindZ = head.rotation.z;
-      headBindX = head.rotation.x;
-    }
+    if (head) headBindQ = head.quaternion.clone();
     chest = bones.get('CC_Base_Spine02') ?? bones.get('CC_Base_Spine01') ?? null;
-    if (chest) chestBindX = chest.rotation.x;
+    if (chest) chestBindQ = chest.quaternion.clone();
 
     kneeBone = bones.get('CC_Base_L_Calf') ?? null;
+    hipBone = bones.get('CC_Base_Hip') ?? null;
 
     const wrapper = new THREE.Group();
     wrapper.rotation.x = FBX_TO_SCENE.rotationX;
@@ -304,6 +401,9 @@ export function createPassenger() {
 
     restHandsOnKnees(bones, group);
 
+    ({ neck: lookNeck, chest: lookChest } = solveLookAngles(head, chest, bones, group));
+    echo();
+
     return group;
   })();
 
@@ -316,31 +416,61 @@ export function createPassenger() {
   }
 
   const worldKnee = new THREE.Vector3();
+  const worldHip = new THREE.Vector3();
+
+  /** Copies each solved bone's rotation onto its duplicates. */
+  function echo(names) {
+    for (const [name, list] of copies) {
+      if (list.length < 2) continue;
+      if (names && !names.includes(name)) continue;
+      const primary = bones.get(name);
+      for (const copy of list) if (copy !== primary) copy.quaternion.copy(primary.quaternion);
+    }
+  }
+
+  // The two the idle animation moves every frame.
+  const LIVE = ['CC_Base_Head', 'CC_Base_Spine02', 'CC_Base_Spine01'];
 
   function update(now) {
     if (!head) return;
 
     // The target sits in the scene, so the bone's world position is its
     // position — no basis change, nothing to get subtly wrong.
-    if (kneeBone) knee.position.copy(kneeBone.getWorldPosition(worldKnee));
+    // Halfway up the thigh rather than on the kneecap. The knee itself is
+    // half behind the console from the driver's seat, and a target nobody can
+    // point at may as well not exist.
+    if (kneeBone && hipBone) {
+      kneeBone.getWorldPosition(worldKnee);
+      hipBone.getWorldPosition(worldHip);
+      knee.position.lerpVectors(worldHip, worldKnee, 0.62);
+    }
 
     const t = Math.min(1, (now - lookStartedAt) / LOOK_MS);
     const amount = lookFrom + (lookTarget - lookFrom) * easeInOut(t);
 
-    // Breathing, and the slow settle of someone sitting in a moving car.
-    if (chest) {
-      chest.rotation.x = chestBindX
-        + Math.sin(now / IDLE.breathPeriod) * IDLE.breath
-        + Math.sin(now / IDLE.swayPeriod + 1.3) * IDLE.sway;
+    // Breathing, the slow settle of someone sitting in a moving car, and the
+    // shoulders coming round when she looks over.
+    if (chest && chestBindQ) {
+      chest.quaternion.copy(chestBindQ);
+      rotateWorld(chest, WORLD_X,
+        Math.sin(now / IDLE.breathPeriod) * IDLE.breath
+        + Math.sin(now / IDLE.swayPeriod + 1.3) * IDLE.sway);
+      rotateWorld(chest, WORLD_Y, amount * lookChest);
     }
 
-    // Added to the bind rotation, not assigned over it: the CC rig's head is
-    // not bound at zero, and assigning would snap her chin to her chest.
-    // The drift keeps her looking out of the window rather than at a fixed
-    // point on the glass; the tilt only comes in when she is looking over.
-    head.rotation.z = headBindZ + amount * LOOK_YAW
-      + Math.sin(now / IDLE.headDriftPeriod) * IDLE.headDrift * (1 - amount);
-    head.rotation.x = headBindX + amount * LOOK_TILT;
+    // Rebuilt from the bind pose each frame and turned about the world axes,
+    // never by writing local eulers: her skull bone's own axes do not line up
+    // with up and sideways, so a local rotation moves her head somewhere other
+    // than where it was asked to go. The drift keeps her scanning the street
+    // rather than staring at one point on the glass; the tilt only arrives
+    // when she looks over, and it is what makes the look a question.
+    if (headBindQ) {
+      head.quaternion.copy(headBindQ);
+      const drift = Math.sin(now / IDLE.headDriftPeriod) * IDLE.headDrift * (1 - amount);
+      rotateWorld(head, WORLD_Y, amount * lookNeck + drift);
+      rotateWorld(head, WORLD_X, amount * LOOK_TILT);
+      echo(LIVE);
+    }
   }
 
   return {

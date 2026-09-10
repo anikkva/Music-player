@@ -15,6 +15,7 @@
 import * as THREE from 'three';
 
 export const WORLD_X = new THREE.Vector3(1, 0, 0);
+export const WORLD_Y = new THREE.Vector3(0, 1, 0);
 
 const _parentQ = new THREE.Quaternion();
 const _rot = new THREE.Quaternion();
