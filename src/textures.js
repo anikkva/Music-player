@@ -4,6 +4,26 @@
 
 import * as THREE from 'three';
 
+// Photographic scans live in assets/textures and are optional: the procedural
+// canvas version is built first and stands in until the image arrives, and
+// stays for good if it never does. The spec's rule — "texture failed to load,
+// fall back to a procedural Canvas texture" — is satisfied by construction,
+// with no error path to get wrong.
+const loader = new THREE.TextureLoader();
+
+function withPhoto(url, tex) {
+  loader.load(
+    url,
+    (loaded) => {
+      tex.image = loaded.image;
+      tex.needsUpdate = true;
+    },
+    undefined,
+    () => {}, // keep the procedural texture
+  );
+  return tex;
+}
+
 function canvas(w, h) {
   const c = document.createElement('canvas');
   c.width = w;
@@ -85,7 +105,7 @@ export function panelTexture() {
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 8;
-  return tex;
+  return withPhoto('assets/textures/panel.jpg', tex);
 }
 
 /** Cracked, dusty vinyl for the dashboard. */
@@ -119,10 +139,12 @@ export function dashTexture() {
 
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
+  // Mirrored rather than plain repeat: the scan is photographic and its edges
+  // do not meet, so a straight tile would draw a seam down the dashboard.
+  tex.wrapS = THREE.MirroredRepeatWrapping;
+  tex.wrapT = THREE.MirroredRepeatWrapping;
   tex.anisotropy = 8;
-  return tex;
+  return withPhoto('assets/textures/dash.jpg', tex);
 }
 
 /** Worn leather-ish upholstery for seats and door cards. */
@@ -149,9 +171,9 @@ export function upholsteryTexture() {
 
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  return tex;
+  tex.wrapS = THREE.MirroredRepeatWrapping;
+  tex.wrapT = THREE.MirroredRepeatWrapping;
+  return withPhoto('assets/textures/cloth.jpg', tex);
 }
 
 /**
@@ -300,5 +322,114 @@ export function grilleTexture() {
   }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/**
+ * Roadside light smears for the planes that scroll past the side windows.
+ * Meant for additive blending, so black is transparent and only the lights
+ * carry.
+ *
+ * These have to read as near, fast light — not as architecture. The panorama
+ * already has buildings, and a second layer of crisp windows sliding across
+ * the first one reads as a broken parallax rather than as speed. So: long
+ * horizontal smears, low contrast, concentrated near the ground where
+ * shopfronts and lamps live.
+ */
+export function roadsideTexture() {
+  const w = 1024;
+  const h = 256;
+  const c = canvas(w, h);
+  const ctx = c.getContext('2d');
+
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, w, h);
+
+  const rand = mulberry32(6161);
+
+  for (let i = 0; i < 54; i += 1) {
+    const x = rand() * w;
+    const y = h * 0.34 + rand() * h * 0.58;
+    const len = 40 + rand() * 150;
+    const thick = 4 + rand() * 12;
+    const warm = rand() > 0.32;
+
+    // Drawn as a gradient rather than a hard ellipse: a smear has no edge.
+    const g = ctx.createLinearGradient(x - len / 2, y, x + len / 2, y);
+    const colour = warm ? '255, 184, 104' : '150, 186, 226';
+    const peak = 0.10 + rand() * 0.26;
+    g.addColorStop(0, `rgba(${colour}, 0)`);
+    g.addColorStop(0.5, `rgba(${colour}, ${peak})`);
+    g.addColorStop(1, `rgba(${colour}, 0)`);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(x, y, len / 2, thick / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // A handful of sodium blooms low down: the lamps and lit shopfronts that
+  // the smears are made of.
+  for (let i = 0; i < 11; i += 1) {
+    const x = rand() * w;
+    const y = h * 0.58 + rand() * h * 0.34;
+    const r = 34 + rand() * 78;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, 'rgba(255, 178, 96, 0.30)');
+    g.addColorStop(0.45, 'rgba(255, 146, 66, 0.09)');
+    g.addColorStop(1, 'rgba(255, 146, 66, 0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  return tex;
+}
+
+/**
+ * Wet-asphalt highlights for the road plane under the windshield. Additive as
+ * well: the asphalt itself is already dark in the panorama, what has to move
+ * is the reflected light.
+ */
+export function roadTexture() {
+  const w = 512;
+  const h = 1024;
+  const c = canvas(w, h);
+  const ctx = c.getContext('2d');
+
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, w, h);
+
+  const rand = mulberry32(2727);
+
+  // Long reflections stretched along the direction of travel.
+  for (let i = 0; i < 70; i += 1) {
+    const x = rand() * w;
+    const y = rand() * h;
+    const len = 60 + rand() * 260;
+    const thick = 4 + rand() * 16;
+    ctx.globalAlpha = 0.05 + rand() * 0.16;
+    ctx.fillStyle = rand() > 0.4 ? '#ffb768' : '#8fb0d0';
+    ctx.beginPath();
+    ctx.ellipse(x, y, thick / 2, len / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Lane markings down the middle, dashed.
+  ctx.globalAlpha = 0.22;
+  ctx.fillStyle = '#e8dcc0';
+  for (let y = 0; y < h; y += 128) {
+    ctx.fillRect(w * 0.5 - 4, y, 8, 70);
+  }
+  ctx.globalAlpha = 1;
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
   return tex;
 }

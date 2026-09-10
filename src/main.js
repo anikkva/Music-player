@@ -5,6 +5,7 @@ import { STATIONS } from './stations.js';
 import { createPlayer, STATUS } from './player.js';
 import { createScene, isWebGLAvailable } from './scene.js';
 import { createInterior } from './interior.js';
+import { createDriving } from './driving.js';
 import { createPassenger, createDriverLegs } from './passenger.js';
 import { createRadio } from './radio.js';
 import { createLcd } from './lcd.js';
@@ -30,7 +31,13 @@ if (!isWebGLAvailable()) {
 function boot() {
   const { scene, camera, renderer, lcdGlow, render } = createScene(canvas);
 
-  scene.add(createInterior().group);
+  const interior = createInterior();
+  scene.add(interior.group);
+
+  // Everything that makes the car read as moving: lamps sweeping through the
+  // cabin, scenery scrolling past the glass, the road under the windshield.
+  const driving = createDriving();
+  scene.add(driving.group);
 
   // The driver's own knees, so the viewer is sitting in the car rather than
   // floating in it.
@@ -163,9 +170,11 @@ function boot() {
   const clock = new THREE.Clock();
   function frame() {
     const now = performance.now();
-    clock.getDelta();
+    const dt = clock.getDelta();
 
-    cameraRig.update();
+    driving.update(dt);
+    interior.wheel.rotation.z = driving.steer(now);
+    cameraRig.update(now);
     radio.update(now);
     hand.update(now);
     lcd.update(now);

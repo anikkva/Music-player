@@ -330,5 +330,7 @@ export function createInterior() {
     group.add(die);
   }
 
-  return { group };
+  // The wheel is handed out so the hands can be parked on its rim and so the
+  // driving module can hold a lane with it.
+  return { group, wheel };
 }

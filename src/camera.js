@@ -10,6 +10,29 @@ import { clampYaw, clampPitch, clampZoom, ZOOM_MIN, ZOOM_MAX } from './cameraMat
 
 const DRAG_THRESHOLD = 5; // px — beyond this a gesture is a look, not a click
 
+// Road shake. Sums of incommensurable sines rather than random noise: noise
+// jitters the whole frame and reads as a broken renderer, while layered sines
+// read as a car. Amplitudes are in radians — a quarter of a degree of tremor
+// on top of a slow sway.
+const SHAKE = [
+  { period: 118, yaw: 0.00042, pitch: 0.00075, roll: 0.00030 },  // engine
+  { period: 313, yaw: 0.00090, pitch: 0.00140, roll: 0.00060 },  // surface
+  { period: 1970, yaw: 0.00240, pitch: 0.00160, roll: 0.00180 }, // sway
+];
+
+function shakeAt(now) {
+  let yaw = 0;
+  let pitch = 0;
+  let roll = 0;
+  for (const layer of SHAKE) {
+    const phase = now / layer.period;
+    yaw += Math.sin(phase) * layer.yaw;
+    pitch += Math.sin(phase * 1.37 + 1.1) * layer.pitch;
+    roll += Math.sin(phase * 0.83 + 2.4) * layer.roll;
+  }
+  return { yaw, pitch, roll };
+}
+
 // Distance from the driver's eyes to the faceplate, and the half-extents of
 // the framed region at each end of the zoom range. Near: the radio plus its
 // bezel with a margin. Far: the whole cabin ahead of the driver.
@@ -92,7 +115,7 @@ export function createCameraRig(camera, domElement, { yaw = 0, pitch = 0, zoom =
   window.addEventListener('pointerup', onPointerUp);
   domElement.addEventListener('wheel', onWheel, { passive: false });
 
-  function update() {
+  function update(now = performance.now()) {
     // Inertial coast after the pointer is released.
     if (!pointerDown) {
       velocity.yaw *= 0.90;
@@ -102,8 +125,12 @@ export function createCameraRig(camera, domElement, { yaw = 0, pitch = 0, zoom =
         state.pitch = clampPitch(state.pitch + velocity.pitch);
       }
     }
-    camera.rotation.y = state.yaw;
-    camera.rotation.x = state.pitch;
+    // Road shake goes on after the limits, not before: it is the car moving
+    // under the driver, not the driver looking further than they can.
+    const shake = shakeAt(now);
+    camera.rotation.y = state.yaw + shake.yaw;
+    camera.rotation.x = state.pitch + shake.pitch;
+    camera.rotation.z = shake.roll;
 
     const fov = zoomToFov(state.zoom, camera.aspect);
     if (Math.abs(camera.fov - fov) > 0.01) {
