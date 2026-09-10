@@ -57,13 +57,17 @@ const MAPS = {
 // something to measure. In world terms it is simply "swing the thigh forward,
 // drop the shin": one axis, signs found by watching where the joint lands.
 // Order matters, and the world matrix has to be refreshed between links.
+// The knees ride high and the heels tuck back, because they have to: the
+// Impala's cushion sits 0.50 m below the driver's eye and its floorpan only
+// 0.31 m below that. Sitting with the shins vertical, as in a modern car, puts
+// her heels through the carpet.
 const LEG_POSE = [
-  ['CC_Base_L_Thigh', -1.48],
-  ['CC_Base_R_Thigh', -1.52],
-  ['CC_Base_L_Calf', -0.47],
-  ['CC_Base_R_Calf', -0.47],
-  ['CC_Base_L_Foot', -0.80],
-  ['CC_Base_R_Foot', -0.80],
+  ['CC_Base_L_Thigh', -1.44],
+  ['CC_Base_R_Thigh', -1.48],
+  ['CC_Base_L_Calf', -0.90],
+  ['CC_Base_R_Calf', -0.90],
+  ['CC_Base_L_Foot', -0.55],
+  ['CC_Base_R_Foot', -0.55],
 ];
 
 // The arms and spine are gentler and read fine as local euler deltas on top
@@ -85,8 +89,48 @@ const POSE = {
 
 const WORLD_X = new THREE.Vector3(1, 0, 0);
 
+/**
+ * Straightens or folds the shins until her heels rest on the floor.
+ *
+ * Hard-coding a knee angle only works for one cabin. This one is solved:
+ * measure where the foot actually ended up, bend the knee by roughly the angle
+ * that closes the gap, and repeat. It converges in a handful of passes and
+ * costs nothing, since it runs once when the model loads.
+ */
+function standHeelsOnFloor(bones, group) {
+  const calves = ['CC_Base_L_Calf', 'CC_Base_R_Calf'].map((n) => bones.get(n));
+  const foot = bones.get('CC_Base_L_Foot');
+  if (!foot || calves.some((c) => !c)) return;
+
+  const target = FLOOR_Y + HEEL_CLEARANCE;
+  const at = new THREE.Vector3();
+
+  for (let pass = 0; pass < 12; pass += 1) {
+    group.updateWorldMatrix(true, true);
+    foot.getWorldPosition(at);
+    const gap = target - at.y;
+    if (Math.abs(gap) < 0.005) break;
+
+    // ~3 radians of knee per metre of heel, measured off the rig, and never
+    // more than a tenth of a radian at a time so it cannot overshoot.
+    const step = Math.max(-0.1, Math.min(0.1, gap * 3));
+    for (const calf of calves) {
+      calf.updateWorldMatrix(true, false);
+      calf.rotateOnWorldAxis(WORLD_X, step);
+    }
+  }
+}
+
+// The floor of the footwell, and how close to it her heels should settle.
+// Her shins are straightened against this after the pose is applied, so she
+// keeps her feet on the floor even if the cabin under her changes.
+const FLOOR_Y = -0.81;
+const HEEL_CLEARANCE = 0.02;
+
 // Where her hip sits, and how far she is turned toward the driver.
-const HIP_AT = new THREE.Vector3(0.90, -0.47, 0.10);
+// Measured, not guessed: rays dropped onto the bench put its cushion at
+// y = -0.50 over z = -0.35..0.05, with the backrest starting at z = 0.05.
+const HIP_AT = new THREE.Vector3(0.90, -0.46, -0.06);
 const FACING = -0.20;
 
 // How far the head turns to look at the driver, and how long it takes.
@@ -206,6 +250,8 @@ export function createPassenger() {
       const at = hip.getWorldPosition(new THREE.Vector3());
       group.position.add(HIP_AT.clone().sub(at));
     }
+
+    standHeelsOnFloor(bones, group);
 
     return group;
   })();
