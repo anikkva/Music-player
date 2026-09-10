@@ -4,16 +4,16 @@ import * as THREE from 'three';
 import { STATIONS } from './stations.js';
 import { createPlayer, STATUS } from './player.js';
 import { createScene, isWebGLAvailable } from './scene.js';
-import { createInterior } from './interior.js';
+import { createCabin } from './cabin.js';
 import { createDriving } from './driving.js';
-import { createPassenger, createDriverLegs } from './passenger.js';
+import { createPassenger } from './passenger.js';
 import { createRadio } from './radio.js';
 import { createLcd } from './lcd.js';
 import { createHands } from './hand.js';
 import { createCameraRig } from './camera.js';
 import { createInteraction } from './interaction.js';
 import { angleToVolume, volumeToAngle, MIN_ANGLE, MAX_ANGLE } from './knob.js';
-import { RADIO_POSITION, RADIO_YAW, RADIO_PITCH } from './layout.js';
+import { RADIO_POSITION, RADIO_YAW, RADIO_PITCH, RADIO_SCALE } from './layout.js';
 
 const canvas = document.getElementById('scene');
 const overlay = document.getElementById('overlay');
@@ -31,17 +31,15 @@ if (!isWebGLAvailable()) {
 function boot() {
   const { scene, camera, renderer, lcdGlow, render } = createScene(canvas);
 
-  const interior = createInterior();
-  scene.add(interior.group);
+  // The car. Its geometry loads in the background; the wheel proxy the hands
+  // rest on exists from the start, so nothing waits on it.
+  const cabin = createCabin();
+  scene.add(cabin.group);
 
   // Everything that makes the car read as moving: lamps sweeping through the
   // cabin, scenery scrolling past the glass, the road under the windshield.
   const driving = createDriving();
   scene.add(driving.group);
-
-  // The driver's own knees, so the viewer is sitting in the car rather than
-  // floating in it.
-  scene.add(createDriverLegs().group);
 
   // Passenger in the right-hand seat. Her model loads in the background: the
   // radio is the point of the page and must not wait on 14 MB of FBX.
@@ -57,6 +55,7 @@ function boot() {
   radio.group.rotation.order = 'YXZ';
   radio.group.rotation.y = RADIO_YAW;
   radio.group.rotation.x = RADIO_PITCH;
+  radio.group.scale.setScalar(RADIO_SCALE);
   scene.add(radio.group);
 
   const lcd = createLcd();
@@ -64,7 +63,7 @@ function boot() {
   radio.lcdMesh.material.needsUpdate = true;
 
   // Hands: both resting on the wheel, the right one leaving it for the radio.
-  const hands = createHands({ wheel: interior.wheel, scene });
+  const hands = createHands({ wheel: cabin.wheel, scene });
 
   // The faceplate's outward normal, which is the direction a fingertip
   // approaches a control from.
@@ -200,7 +199,9 @@ function boot() {
     const dt = clock.getDelta();
 
     driving.update(dt);
-    interior.wheel.rotation.z = driving.steer(now);
+    // The Impala's rim is baked into the body mesh and cannot turn, so only
+    // the empty the hands are parked on takes the steering correction.
+    cabin.wheel.rotation.z = driving.steer(now);
     cameraRig.update(now);
     radio.update(now);
     hands.update(now);

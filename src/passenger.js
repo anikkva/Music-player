@@ -19,10 +19,10 @@ import * as THREE from 'three';
 const MODEL = 'assets/models/passenger/passenger.fbx';
 const TEX = 'assets/models/passenger/textures/';
 
-// 0.0093 rather than 0.01: the model is 1.85 m tall and this cabin's floor is
-// only ~0.3 m below its seats, so a full-height figure puts her feet through
-// the floorpan. Scaled to about 1.72 m she fits the space she is sitting in.
-const FBX_TO_SCENE = { scale: 0.0093, rotationX: -Math.PI / 2 };
+// The model is 1.85 m tall; 0.0097 brings her to about 1.79 m, which is what
+// fits between the Impala's bench and its floorpan without her heels going
+// through the carpet.
+const FBX_TO_SCENE = { scale: 0.0097, rotationX: -Math.PI / 2 };
 
 // Materials that need a proper skin/refraction shader to look like anything.
 // Left on, they read as glass beads and grey films over her face.
@@ -86,7 +86,7 @@ const POSE = {
 const WORLD_X = new THREE.Vector3(1, 0, 0);
 
 // Where her hip sits, and how far she is turned toward the driver.
-const HIP_AT = new THREE.Vector3(0.74, -0.60, 0.04);
+const HIP_AT = new THREE.Vector3(0.90, -0.47, 0.10);
 const FACING = -0.20;
 
 // How far the head turns to look at the driver, and how long it takes.
@@ -244,52 +244,4 @@ export function createPassenger() {
     kneeWorldPosition: () => knee.getWorldPosition(new THREE.Vector3()),
     isLoaded: () => head !== null,
   };
-}
-
-/**
- * The driver's own knees, seen when looking down. Just enough to place the
- * viewer's body in the seat — the rest of the driver is behind the camera.
- */
-export function createDriverLegs() {
-  const group = new THREE.Group();
-  const denim = new THREE.MeshStandardMaterial({ color: 0x262932, roughness: 0.95 });
-  const shoe = new THREE.MeshStandardMaterial({ color: 0x15130f, roughness: 0.7 });
-
-  const V = (x, y, z) => new THREE.Vector3(x, y, z);
-
-  const limb = (mat, rTop, rBottom, from, to) => {
-    const dir = new THREE.Vector3().subVectors(to, from);
-    const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(rTop, rBottom, dir.length(), 16, 1), mat,
-    );
-    mesh.position.copy(from).addScaledVector(dir, 0.5);
-    mesh.quaternion.setFromUnitVectors(V(0, 1, 0), dir.clone().normalize());
-    group.add(mesh);
-  };
-
-  for (const side of [-1, 1]) {
-    const x = -0.42 + side * 0.145;
-    const hip = V(x, -0.60, 0.16);
-    const knee = V(x + side * 0.02, -0.66, -0.30);
-    const ankle = V(x + side * 0.01, -0.99, -0.46);
-
-    limb(denim, 0.098, 0.078, hip, knee);
-    const kneeBall = new THREE.Mesh(new THREE.SphereGeometry(0.078, 16, 12), denim);
-    kneeBall.position.copy(knee);
-    kneeBall.scale.set(1, 0.85, 1.05);
-    group.add(kneeBall);
-    limb(denim, 0.072, 0.054, knee, ankle);
-
-    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.055, 0.22), shoe);
-    foot.position.set(x + side * 0.01, -1.00, -0.55);
-    foot.rotation.x = 0.12;
-    group.add(foot);
-
-    const toe = new THREE.Mesh(new THREE.SphereGeometry(0.052, 14, 10), shoe);
-    toe.scale.set(0.96, 0.52, 1.15);
-    toe.position.set(x + side * 0.01, -1.005, -0.652);
-    group.add(toe);
-  }
-
-  return { group };
 }

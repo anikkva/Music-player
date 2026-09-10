@@ -26,15 +26,19 @@ const HOLD_GAP = 0.030;  // and how far back it sits while gripping a knob
 // Where the hands sit on the rim, in wheel-local space: ten o'clock and two
 // o'clock, a little proud of the rim plane so the fingers are on the driver's
 // side of it.
-const RIM_RADIUS = 0.185;
-const RIM_ANGLES = { left: (150 * Math.PI) / 180, right: (30 * Math.PI) / 180 };
+const RIM_RADIUS = 0.205;
+// Ten o'clock and four o'clock, not ten and two. The radio sits past the
+// right of the rim, and a hand at two puts a forearm straight across it from
+// the driver's eye — which is the one thing on the dash that has to stay
+// readable.
+const RIM_ANGLES = { left: (150 * Math.PI) / 180, right: (-52 * Math.PI) / 180 };
 const RIM_LIFT = 0.026;
 
 // Where the driver's shoulders are, in world space. A resting hand is aimed
 // at its own shoulder rather than straight out of the wheel's plane: the
 // wheel faces the driver's eyes, so an arm along its normal runs directly at
 // the camera and fills the frame with forearm.
-const SHOULDERS = { left: [-0.64, -0.36, 0.24], right: [-0.20, -0.36, 0.24] };
+const SHOULDERS = { left: [-0.21, -0.36, 0.24], right: [0.21, -0.36, 0.24] };
 
 const easeOut = (t) => 1 - (1 - t) ** 3;
 const easeIn = (t) => t * t;
