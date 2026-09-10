@@ -15,7 +15,7 @@
 // same solver that parks a hand on the rim also carries it to a button.
 
 import * as THREE from 'three';
-import { WORLD_X, rotateWorld, solveChain, sitDown, gripAround } from './pose.js';
+import { WORLD_X, rotateWorld, solveChain, sitDown, curlFingers } from './pose.js';
 
 const MODEL = 'assets/models/driver/driver.glb';
 const B = 'rp_nathan_animated_003_walking_';
@@ -68,7 +68,13 @@ const HEAD_BONE_AT = new THREE.Vector3(0, -0.085, 0.085);
 // up nearer his mouth than his eyes, which nobody can see, because his head is
 // not drawn.
 const CUSHION_Y = -0.65;
-const MAX_LIFT = 0.12;
+
+// Bodies are not points. The hip bone sits inside the pelvis, so putting the
+// bone exactly on the cushion leaves the seat of his jeans and the underside
+// of his thighs inside the upholstery. Six centimetres of clearance is about
+// the radius of a thigh and takes the intersection out of the picture.
+const SEAT_CLEARANCE = 0.06;
+const MAX_LIFT = 0.18;
 const FLOOR_Y = -0.96;
 
 // A slight lean into the wheel. His scan stands bolt upright, and from that
@@ -115,8 +121,8 @@ function handFingers(bones, side) {
   return ['thumb', 'index', 'middle', 'ring', 'pinky'].map((finger) => ({
     joints: ['01', '02', '03'].map((k) => pick(finger, k)),
     tip: pick(finger, 'end'),
-    // The thumb closes from the near side of the rim, the fingers from behind.
-    reach: finger === 'thumb' ? -0.03 : 0.055,
+    // The thumb closes across the rim rather than around it, so it curls less.
+    curl: finger === 'thumb' ? 0.45 : 1,
   }));
 }
 
@@ -211,7 +217,7 @@ export function createDriver({ wheel }) {
 
     // Lift him until his lap clears the cushion.
     group.updateWorldMatrix(true, true);
-    const sunk = CUSHION_Y - bone('hip').getWorldPosition(new THREE.Vector3()).y;
+    const sunk = (CUSHION_Y + SEAT_CLEARANCE) - bone('hip').getWorldPosition(new THREE.Vector3()).y;
     if (sunk > 0) group.position.y += Math.min(sunk, MAX_LIFT);
 
     // Thighs level and heels down, measured against this cabin's seat.
@@ -239,12 +245,15 @@ export function createDriver({ wheel }) {
     solveChain({ chain: armChain('right'), end: bone('handR'), target: restRight, root: group, passes: 24 });
 
     // Close both hands around the rim. The arms put the palms there; this is
-    // what makes it read as holding the wheel rather than touching it.
-    const through = new THREE.Vector3(0, 0, 1).applyQuaternion(wheel.getWorldQuaternion(new THREE.Quaternion()));
-    const spread = new THREE.Vector3(1, 0, 0).applyQuaternion(wheel.getWorldQuaternion(new THREE.Quaternion()));
+    // what makes it read as holding the wheel rather than touching it. The
+    // fingers close toward a point just behind the rim, so the curl wraps it
+    // instead of stopping short.
+    const behind = new THREE.Vector3(0, 0, 1)
+      .applyQuaternion(wheel.getWorldQuaternion(new THREE.Quaternion()))
+      .multiplyScalar(-0.05);
     for (const side of ['left', 'right']) {
-      const at = rimPoint(side, new THREE.Vector3());
-      gripAround({ fingers: handFingers(bones, side), at, through, spread, root: group });
+      const toward = rimPoint(side, new THREE.Vector3()).add(behind);
+      curlFingers({ fingers: handFingers(bones, side), toward, root: group });
     }
 
     rememberRest(reachChain());

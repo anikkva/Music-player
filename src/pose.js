@@ -154,47 +154,51 @@ export function sitDown({ legs, hipAt, floorY, root, kneeForward = 0.42, thighDr
 }
 
 /**
- * Curls a finger around something by sending its tip to a point.
+ * Curls a hand's fingers.
  *
- * A relaxed scan holds its hands flat, which on a steering wheel reads as
- * pressing a palm against the rim rather than holding it. Rather than invent
- * joint angles per rig, each finger is a three-link chain solved to a target
- * behind the rim — the same descent that drives the arms, at a smaller scale.
- * The damping rises along the finger so the tip curls more than the knuckle,
- * which is what a hand actually does.
- */
-export function curlFinger({ joints, tip, target, root, passes = 8 }) {
-  if (!tip || joints.some((j) => !j)) return;
-  solveChain({
-    chain: [
-      [joints[2], 0.45],
-      [joints[1], 0.32],
-      [joints[0], 0.20],
-    ],
-    end: tip,
-    target,
-    root,
-    passes,
-  });
-}
-
-/**
- * Wraps a whole hand around a rim.
+ * Not with the chain solver — that was the mistake. Descent in free space
+ * reaches its target by whatever route it likes, and a three-link finger with
+ * nothing to stop it twists its joints sideways to get there. The result is a
+ * hand with fingers pointing in five directions, which is what a broken hand
+ * looks like.
  *
- * `grip` is the point the palm sits at, `through` the direction the fingers
- * close in — for a steering wheel, back through the rim and away from the
- * driver. Each finger gets its own target, spread a little along the rim so
- * they do not all converge on one spot.
+ * A finger has one degree of freedom per joint and they all share an axis: the
+ * line through the knuckles. That line is read off the rig itself, from where
+ * the index and little finger start, so it needs no per-model tuning. Which
+ * way along it closes the hand is settled by trying a little of it and seeing
+ * whether the fingertip moved toward what is being held.
  */
-export function gripAround({ fingers, at, through, spread, root, reach = 0.055 }) {
-  const target = new THREE.Vector3();
-  const n = fingers.length;
+export function curlFingers({ fingers, toward, root, amounts = [0.42, 0.72, 0.58] }) {
+  const usable = fingers.filter((f) => f.joints?.every(Boolean));
+  if (usable.length < 2) return;
 
-  fingers.forEach((finger, i) => {
-    const along = n > 1 ? (i / (n - 1) - 0.5) * 2 : 0;
-    target.copy(at)
-      .addScaledVector(through, finger.reach ?? reach)
-      .addScaledVector(spread, along * 0.035);
-    curlFinger({ joints: finger.joints, tip: finger.tip, target, root });
-  });
+  const first = usable[0].joints[0].getWorldPosition(new THREE.Vector3());
+  const last = usable[usable.length - 1].joints[0].getWorldPosition(new THREE.Vector3());
+  const axis = last.sub(first);
+  if (axis.lengthSq() < 1e-8) return;
+  axis.normalize();
+
+  // Which way along the knuckle line closes the hand.
+  const probe = usable.find((f) => f.tip) ?? usable[0];
+  const tip = probe.tip ?? probe.joints[2];
+  const at = new THREE.Vector3();
+  const reachOf = () => {
+    root.updateWorldMatrix(true, true);
+    tip.getWorldPosition(at);
+    return at.distanceTo(toward);
+  };
+
+  const before = reachOf();
+  rotateWorld(probe.joints[0], axis, 0.12);
+  const after = reachOf();
+  rotateWorld(probe.joints[0], axis, -0.12);
+  const sign = after < before ? 1 : -1;
+
+  for (const finger of usable) {
+    const scale = finger.curl ?? 1;
+    finger.joints.forEach((joint, i) => {
+      joint.updateWorldMatrix(true, false);
+      rotateWorld(joint, axis, sign * amounts[i] * scale);
+    });
+  }
 }

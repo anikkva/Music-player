@@ -15,7 +15,7 @@
 // hip lands where the seat cushion is.
 
 import * as THREE from 'three';
-import { WORLD_X, rotateWorld, sitDown, curlFinger } from './pose.js';
+import { WORLD_X, rotateWorld, sitDown, solveChain, curlFingers } from './pose.js';
 
 const MODEL = 'assets/models/passenger/passenger.fbx';
 const TEX = 'assets/models/passenger/textures/';
@@ -67,15 +67,15 @@ const LEG_POSE = [
 
 // The arms and spine are gentler and read fine as local euler deltas on top
 // of the bind T-pose: drop the arms to her sides, settle the back.
+// Only the back and the shoulders are set by hand, and only enough to bring
+// the arms down out of the bind T-pose. Where the hands actually go is solved
+// — written-out arm angles put both of hers in the same spot behind her hip,
+// which is the trouble with guessing at a rig you did not build.
 const POSE = {
   CC_Base_L_Clavicle: [0, 0, -0.10],
   CC_Base_R_Clavicle: [0, 0, 0.10],
-  CC_Base_L_Upperarm: [0.20, 0.10, -1.24],
-  CC_Base_R_Upperarm: [0.20, -0.10, 1.24],
-  CC_Base_L_Forearm: [0, -0.55, -0.30],
-  CC_Base_R_Forearm: [0, 0.55, 0.30],
-  CC_Base_L_Hand: [0, 0, -0.18],
-  CC_Base_R_Hand: [0, 0, 0.18],
+  CC_Base_L_Upperarm: [0, 0, -1.10],
+  CC_Base_R_Upperarm: [0, 0, 1.10],
 
   CC_Base_Spine01: [0.06, 0, 0],
   CC_Base_Spine02: [0.04, 0, 0],
@@ -90,7 +90,11 @@ const FLOOR_Y = -0.96;
 // Where her hip sits, and how far she is turned toward the driver.
 // Measured, not guessed: rays dropped onto the bench put its cushion at
 // y = -0.65 over z = -0.35..0.05, with the backrest starting at z = 0.05.
-const HIP_AT = new THREE.Vector3(0.90, -0.61, -0.06);
+//
+// She sits six centimetres above it rather than on it. The hip bone is inside
+// the pelvis, so placing the bone on the cushion pushes her shorts and the
+// backs of her thighs through the upholstery.
+const HIP_AT = new THREE.Vector3(0.90, -0.59, -0.06);
 const FACING = -0.20;
 
 // How far the head turns to look at the driver, how long the turn takes, and
@@ -132,6 +136,57 @@ function surface(loader, [colour, alpha]) {
     material.depthWrite = true;
   }
   return material;
+}
+
+/**
+ * Puts her hands on her knees and drapes the fingers over them.
+ *
+ * Solved rather than written for the same reason her legs are: a rig's arm
+ * bones do not agree with anyone's intuition about which euler does what, and
+ * the angles that looked plausible put both her hands in one spot behind her
+ * hip. A target on the knee has one meaning, and it stays right if she is
+ * moved to a different seat.
+ */
+function restHandsOnKnees(bones, root) {
+  const at = new THREE.Vector3();
+  const target = new THREE.Vector3();
+
+  for (const side of ['L', 'R']) {
+    const knee = bones.get(`CC_Base_${side}_Calf`);
+    const hand = bones.get(`CC_Base_${side}_Hand`);
+    if (!knee || !hand) continue;
+
+    root.updateWorldMatrix(true, true);
+    knee.getWorldPosition(at);
+
+    // On top of the knee and a little back along the thigh, which is where a
+    // hand actually rests — right on the kneecap slides off.
+    target.copy(at).add(new THREE.Vector3(0, 0.055, 0.075));
+    solveChain({
+      chain: [
+        [bones.get(`CC_Base_${side}_Forearm`), 0.5],
+        [bones.get(`CC_Base_${side}_Upperarm`), 0.5],
+        [bones.get(`CC_Base_${side}_Clavicle`), 0.18],
+      ],
+      end: hand,
+      target,
+      root,
+      passes: 22,
+    });
+
+    // Fingers fall over the front of the knee — a light drape, not a fist.
+    root.updateWorldMatrix(true, true);
+    hand.getWorldPosition(at);
+    curlFingers({
+      fingers: ['Index', 'Mid', 'Ring', 'Pinky', 'Thumb'].map((finger) => {
+        const joints = [1, 2, 3].map((k) => bones.get(`CC_Base_${side}_${finger}${k}`));
+        return { joints, tip: joints[2], curl: finger === 'Thumb' ? 0.4 : 1 };
+      }),
+      toward: at.clone().add(new THREE.Vector3(0, -0.07, -0.07)),
+      root,
+      amounts: [0.30, 0.45, 0.35],
+    });
+  }
 }
 
 /**
@@ -233,25 +288,6 @@ export function createPassenger() {
       group.position.add(HIP_AT.clone().sub(at));
     }
 
-    // Her hands come out of the scan flat. Curling the fingers loosely is
-    // most of what makes a hand resting in a lap look like a hand rather than
-    // a glove laid on a knee.
-    for (const side of ['L', 'R']) {
-      const hand = bones.get(`CC_Base_${side}_Hand`);
-      if (!hand) continue;
-      const palm = hand.getWorldPosition(new THREE.Vector3());
-      const inward = new THREE.Vector3(0, -0.055, -0.02).applyQuaternion(group.quaternion);
-      for (const finger of ['Index', 'Mid', 'Ring', 'Pinky', 'Thumb']) {
-        curlFinger({
-          joints: [1, 2, 3].map((k) => bones.get(`CC_Base_${side}_${finger}${k}`)),
-          tip: bones.get(`CC_Base_${side}_${finger}3`),
-          target: palm.clone().add(finger === 'Thumb' ? inward.clone().multiplyScalar(0.5) : inward),
-          root: group,
-          passes: 6,
-        });
-      }
-    }
-
     // Thighs level and heels down, measured against this cabin's bench.
     group.updateWorldMatrix(true, true);
     sitDown({
@@ -265,6 +301,8 @@ export function createPassenger() {
       floorY: FLOOR_Y,
       root: group,
     });
+
+    restHandsOnKnees(bones, group);
 
     return group;
   })();
