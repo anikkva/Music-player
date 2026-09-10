@@ -14,4 +14,4 @@
 export const RADIO_POSITION = [0.39, -0.28, -0.855];
 export const RADIO_YAW = 0.02;
 export const RADIO_PITCH = -0.20;
-export const RADIO_SCALE = 0.52;
+export const RADIO_SCALE = 0.72;

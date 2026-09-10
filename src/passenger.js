@@ -15,7 +15,7 @@
 // hip lands where the seat cushion is.
 
 import * as THREE from 'three';
-import { WORLD_X, rotateWorld, sitDown } from './pose.js';
+import { WORLD_X, rotateWorld, sitDown, curlFinger } from './pose.js';
 
 const MODEL = 'assets/models/passenger/passenger.fbx';
 const TEX = 'assets/models/passenger/textures/';
@@ -93,9 +93,23 @@ const FLOOR_Y = -0.96;
 const HIP_AT = new THREE.Vector3(0.90, -0.61, -0.06);
 const FACING = -0.20;
 
-// How far the head turns to look at the driver, and how long it takes.
+// How far the head turns to look at the driver, how long the turn takes, and
+// how long she holds it. The hold is deliberately long: a glance that snaps
+// back reads as a twitch, a look that lingers reads as a question.
 const LOOK_YAW = 0.62;
-const LOOK_MS = 420;
+const LOOK_TILT = 0.10;   // a slight cock of the head, which is what asks it
+const LOOK_MS = 520;
+
+// She is never quite still. Breathing is the slow one; the rest is the small
+// constant settling anyone does in a moving car. Amplitudes are radians.
+const IDLE = {
+  breathPeriod: 4200,
+  breath: 0.016,
+  swayPeriod: 9700,
+  sway: 0.020,
+  headDriftPeriod: 7300,
+  headDrift: 0.035,
+};
 
 const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
 
@@ -145,7 +159,10 @@ export function createPassenger() {
 
   let head = null;
   let kneeBone = null;
+  let chest = null;
   let headBindZ = 0;
+  let headBindX = 0;
+  let chestBindX = 0;
   let lookStartedAt = 0;
   let lookTarget = 0;   // 0 = out of the window, 1 = at the driver
   let lookFrom = 0;
@@ -179,7 +196,12 @@ export function createPassenger() {
     }
 
     head = bones.get('CC_Base_Head') ?? null;
-    if (head) headBindZ = head.rotation.z;
+    if (head) {
+      headBindZ = head.rotation.z;
+      headBindX = head.rotation.x;
+    }
+    chest = bones.get('CC_Base_Spine02') ?? bones.get('CC_Base_Spine01') ?? null;
+    if (chest) chestBindX = chest.rotation.x;
 
     kneeBone = bones.get('CC_Base_L_Calf') ?? null;
 
@@ -209,6 +231,25 @@ export function createPassenger() {
     if (hip) {
       const at = hip.getWorldPosition(new THREE.Vector3());
       group.position.add(HIP_AT.clone().sub(at));
+    }
+
+    // Her hands come out of the scan flat. Curling the fingers loosely is
+    // most of what makes a hand resting in a lap look like a hand rather than
+    // a glove laid on a knee.
+    for (const side of ['L', 'R']) {
+      const hand = bones.get(`CC_Base_${side}_Hand`);
+      if (!hand) continue;
+      const palm = hand.getWorldPosition(new THREE.Vector3());
+      const inward = new THREE.Vector3(0, -0.055, -0.02).applyQuaternion(group.quaternion);
+      for (const finger of ['Index', 'Mid', 'Ring', 'Pinky', 'Thumb']) {
+        curlFinger({
+          joints: [1, 2, 3].map((k) => bones.get(`CC_Base_${side}_${finger}${k}`)),
+          tip: bones.get(`CC_Base_${side}_${finger}3`),
+          target: palm.clone().add(finger === 'Thumb' ? inward.clone().multiplyScalar(0.5) : inward),
+          root: group,
+          passes: 6,
+        });
+      }
     }
 
     // Thighs level and heels down, measured against this cabin's bench.
@@ -247,9 +288,21 @@ export function createPassenger() {
 
     const t = Math.min(1, (now - lookStartedAt) / LOOK_MS);
     const amount = lookFrom + (lookTarget - lookFrom) * easeInOut(t);
+
+    // Breathing, and the slow settle of someone sitting in a moving car.
+    if (chest) {
+      chest.rotation.x = chestBindX
+        + Math.sin(now / IDLE.breathPeriod) * IDLE.breath
+        + Math.sin(now / IDLE.swayPeriod + 1.3) * IDLE.sway;
+    }
+
     // Added to the bind rotation, not assigned over it: the CC rig's head is
     // not bound at zero, and assigning would snap her chin to her chest.
-    head.rotation.z = headBindZ + amount * LOOK_YAW;
+    // The drift keeps her looking out of the window rather than at a fixed
+    // point on the glass; the tilt only comes in when she is looking over.
+    head.rotation.z = headBindZ + amount * LOOK_YAW
+      + Math.sin(now / IDLE.headDriftPeriod) * IDLE.headDrift * (1 - amount);
+    head.rotation.x = headBindX + amount * LOOK_TILT;
   }
 
   return {

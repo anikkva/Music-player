@@ -15,7 +15,7 @@
 // same solver that parks a hand on the rim also carries it to a button.
 
 import * as THREE from 'three';
-import { WORLD_X, rotateWorld, solveChain, sitDown } from './pose.js';
+import { WORLD_X, rotateWorld, solveChain, sitDown, gripAround } from './pose.js';
 
 const MODEL = 'assets/models/driver/driver.glb';
 const B = 'rp_nathan_animated_003_walking_';
@@ -43,6 +43,10 @@ const BONES = {
   footR: `${B}foot_r_083`,
 };
 
+// Finger chains, thumb first. Each is three joints plus the tip the solver
+// aims: index_01 -> index_02 -> index_03, and index_end as the fingertip.
+
+
 // How tall he ends up, in metres. His own units are not trusted: this glTF
 // already carries a scale on its root node, so multiplying by a fixed
 // centimetre factor made him four centimetres tall. Measure, then fit.
@@ -53,6 +57,18 @@ const TARGET_HEIGHT = 1.78;
 // offset is from the head bone's pivot to the eyes: up the skull and forward,
 // and he faces -z.
 const HEAD_BONE_AT = new THREE.Vector3(0, -0.085, 0.085);
+
+// The bench's cushion, and how far he may be lifted off the eye anchor to
+// keep his lap out of it.
+//
+// A 1.78 m man seated puts his hip about 0.76 m below his eyes; this cabin
+// puts its cushion 0.65 m below them. Anchored purely by the eye he sinks
+// eleven centimetres into the seat, and his thighs — the thing you look down
+// to see — are inside the upholstery. Raising him closes that: the camera ends
+// up nearer his mouth than his eyes, which nobody can see, because his head is
+// not drawn.
+const CUSHION_Y = -0.65;
+const MAX_LIFT = 0.12;
 const FLOOR_Y = -0.96;
 
 // A slight lean into the wheel. His scan stands bolt upright, and from that
@@ -79,6 +95,30 @@ const TOUCH_GAP = 0.02;
 
 const easeOut = (t) => 1 - (1 - t) ** 3;
 const easeIn = (t) => t * t;
+
+/**
+ * Finds the finger chains for one hand.
+ *
+ * By pattern, not by arithmetic: the rig numbers its joints consecutively
+ * almost everywhere, and then does not — the left middle finger's first joint
+ * is `middle_01_l_00` where every neighbour would predict `_035`. Names are
+ * the only thing that can be trusted.
+ */
+function handFingers(bones, side) {
+  const s = side === 'left' ? 'l' : 'r';
+  const names = [...bones.keys()];
+  const pick = (finger, part) => {
+    const re = new RegExp(`_${finger}_${part}_${s}_\\d+$`);
+    return bones.get(names.find((n) => re.test(n)));
+  };
+
+  return ['thumb', 'index', 'middle', 'ring', 'pinky'].map((finger) => ({
+    joints: ['01', '02', '03'].map((k) => pick(finger, k)),
+    tip: pick(finger, 'end'),
+    // The thumb closes from the near side of the rim, the fingers from behind.
+    reach: finger === 'thumb' ? -0.03 : 0.055,
+  }));
+}
 
 /**
  * @param wheel the empty standing in for the steering wheel; its rim radius
@@ -169,6 +209,11 @@ export function createDriver({ wheel }) {
       group.position.add(HEAD_BONE_AT.clone().sub(head.getWorldPosition(new THREE.Vector3())));
     }
 
+    // Lift him until his lap clears the cushion.
+    group.updateWorldMatrix(true, true);
+    const sunk = CUSHION_Y - bone('hip').getWorldPosition(new THREE.Vector3()).y;
+    if (sunk > 0) group.position.y += Math.min(sunk, MAX_LIFT);
+
     // Thighs level and heels down, measured against this cabin's seat.
     group.updateWorldMatrix(true, true);
     const hipAt = bone('hip').getWorldPosition(new THREE.Vector3());
@@ -192,6 +237,15 @@ export function createDriver({ wheel }) {
     solveChain({ chain: armChain('left'), end: bone('handL'), target: goal, root: group, passes: 24 });
     rimPoint('right', restRight);
     solveChain({ chain: armChain('right'), end: bone('handR'), target: restRight, root: group, passes: 24 });
+
+    // Close both hands around the rim. The arms put the palms there; this is
+    // what makes it read as holding the wheel rather than touching it.
+    const through = new THREE.Vector3(0, 0, 1).applyQuaternion(wheel.getWorldQuaternion(new THREE.Quaternion()));
+    const spread = new THREE.Vector3(1, 0, 0).applyQuaternion(wheel.getWorldQuaternion(new THREE.Quaternion()));
+    for (const side of ['left', 'right']) {
+      const at = rimPoint(side, new THREE.Vector3());
+      gripAround({ fingers: handFingers(bones, side), at, through, spread, root: group });
+    }
 
     rememberRest(reachChain());
 

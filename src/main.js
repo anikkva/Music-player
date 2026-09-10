@@ -111,11 +111,13 @@ function boot() {
     slotPrev: () => player.prev(),
     slotNext: () => player.next(),
     volKnob: () => player.toggle(),
-    // She looks over, and goes back to the window a couple of seconds later.
+    // She looks over, holds it, and only then goes back to the window. The
+    // hold is long on purpose: a glance that snaps straight back reads as a
+    // twitch rather than as a question.
     knee: () => {
       passenger.lookAtDriver();
       clearTimeout(lookAwayTimer);
-      lookAwayTimer = setTimeout(() => passenger.lookAway(), 2200);
+      lookAwayTimer = setTimeout(() => passenger.lookAway(), 5000);
     },
     // Decorative: they depress and light up, but nothing happens.
     am: null, fm: null, preset: null, eject: null, ejectArrow: null, cassette: null,

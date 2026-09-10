@@ -133,7 +133,7 @@ export function solveChain({ chain, end, target, root, passes = 10 }) {
  * cheerfully fold a passenger's legs into the back seat. A point has one
  * answer.
  */
-export function sitDown({ legs, hipAt, floorY, root, kneeForward = 0.42, thighDrop = 0.03, heelClearance = 0.02 }) {
+export function sitDown({ legs, hipAt, floorY, root, kneeForward = 0.42, thighDrop = 0.03, ankleHeight = 0.07 }) {
   const kneeTarget = new THREE.Vector3();
 
   for (const leg of legs) {
@@ -146,6 +146,55 @@ export function sitDown({ legs, hipAt, floorY, root, kneeForward = 0.42, thighDr
     // pinned, so it has only one way to swing and no ambiguity to resolve —
     // and a point picked out of the air is usually one the shin cannot reach,
     // which leaves the foot hanging wherever descent gave up.
-    solveHeight({ joints: [leg.calf], probe: leg.heel, targetY: floorY + heelClearance, root });
+    // The target is the ankle, not the sole. The foot bone sits at the ankle
+    // and the shoe hangs below it, so aiming the bone at the carpet buries the
+    // shoe in it — which is exactly what it looked like.
+    solveHeight({ joints: [leg.calf], probe: leg.heel, targetY: floorY + (leg.ankleHeight ?? ankleHeight), root });
   }
+}
+
+/**
+ * Curls a finger around something by sending its tip to a point.
+ *
+ * A relaxed scan holds its hands flat, which on a steering wheel reads as
+ * pressing a palm against the rim rather than holding it. Rather than invent
+ * joint angles per rig, each finger is a three-link chain solved to a target
+ * behind the rim — the same descent that drives the arms, at a smaller scale.
+ * The damping rises along the finger so the tip curls more than the knuckle,
+ * which is what a hand actually does.
+ */
+export function curlFinger({ joints, tip, target, root, passes = 8 }) {
+  if (!tip || joints.some((j) => !j)) return;
+  solveChain({
+    chain: [
+      [joints[2], 0.45],
+      [joints[1], 0.32],
+      [joints[0], 0.20],
+    ],
+    end: tip,
+    target,
+    root,
+    passes,
+  });
+}
+
+/**
+ * Wraps a whole hand around a rim.
+ *
+ * `grip` is the point the palm sits at, `through` the direction the fingers
+ * close in — for a steering wheel, back through the rim and away from the
+ * driver. Each finger gets its own target, spread a little along the rim so
+ * they do not all converge on one spot.
+ */
+export function gripAround({ fingers, at, through, spread, root, reach = 0.055 }) {
+  const target = new THREE.Vector3();
+  const n = fingers.length;
+
+  fingers.forEach((finger, i) => {
+    const along = n > 1 ? (i / (n - 1) - 0.5) * 2 : 0;
+    target.copy(at)
+      .addScaledVector(through, finger.reach ?? reach)
+      .addScaledVector(spread, along * 0.035);
+    curlFinger({ joints: finger.joints, tip: finger.tip, target, root });
+  });
 }
