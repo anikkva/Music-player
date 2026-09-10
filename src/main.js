@@ -43,12 +43,11 @@ function boot() {
   // floating in it.
   scene.add(createDriverLegs().group);
 
-  // Passenger in the right-hand seat. Phase 2 swaps who is here by track mood;
-  // for now she is simply always there.
+  // Passenger in the right-hand seat. Her model loads in the background: the
+  // radio is the point of the page and must not wait on 14 MB of FBX.
   const passenger = createPassenger();
-  passenger.group.position.set(0.74, -0.66, 0.04);
-  passenger.group.rotation.y = -0.16; // turned a little toward the driver
   scene.add(passenger.group);
+  scene.add(passenger.knee); // her hit target lives at scene scale, not bone scale
 
   // ---- radio, seated in the centre stack and turned toward the driver ----
   const radio = createRadio();
@@ -111,6 +110,12 @@ function boot() {
     slotPrev: () => player.prev(),
     slotNext: () => player.next(),
     volKnob: () => player.toggle(),
+    // She looks over, and goes back to the window a couple of seconds later.
+    knee: () => {
+      passenger.lookAtDriver();
+      clearTimeout(lookAwayTimer);
+      lookAwayTimer = setTimeout(() => passenger.lookAway(), 2200);
+    },
     // Decorative: they depress and light up, but nothing happens.
     am: null, fm: null, preset: null, eject: null, ejectArrow: null, cassette: null,
   };
@@ -121,14 +126,28 @@ function boot() {
     volKnob: 'ВКЛ / ПАУЗА', tuneKnob: 'ГРОМКОСТЬ',
     am: 'AM', fm: 'FM', preset: 'PRESET', eject: 'EJECT',
     ejectArrow: 'EJECT', cassette: 'КАССЕТА',
+    knee: 'ДОТРОНУТЬСЯ',
   };
+
+  let lookAwayTimer = 0;
+
+  /** Where a control is, and which way it faces the driver. */
+  function aimAt(controlId) {
+    if (controlId === 'knee') {
+      const at = passenger.kneeWorldPosition();
+      // The driver's eyes are the origin, so the way out of her knee toward
+      // him is simply the way back to the origin.
+      return [at, at.clone().negate().normalize()];
+    }
+    return [radio.worldPositionOf(controlId), faceNormal];
+  }
 
   async function activate(controlId) {
     if (controlId === 'tuneKnob') return; // handled by dragging, not clicking
     if (hands.isBusy() || hands.isHolding()) return;
 
     interaction.setBusy(true);
-    const touched = await hands.pressAt(radio.worldPositionOf(controlId), faceNormal);
+    const touched = await hands.pressAt(...aimAt(controlId));
     if (touched) {
       // The action fires on contact, not on click.
       radio.pressButton(controlId);
@@ -156,6 +175,11 @@ function boot() {
     },
   });
 
+  // The knee only becomes clickable once there is a knee to click.
+  passenger.ready
+    .then(() => interaction.addTarget(passenger.knee))
+    .catch((e) => console.error('passenger failed to load', e));
+
   // ---- start gesture ----
   // It only puts the user in the driver's seat: the tape is loaded but silent
   // until they press a control on the radio itself.
@@ -167,7 +191,7 @@ function boot() {
   });
 
   // Debug handle, handy when checking framing from the console.
-  window.__player = { camera, radio, cameraRig, scene, player, renderer, render, lcd, hands };
+  window.__player = { camera, radio, cameraRig, scene, player, renderer, render, lcd, hands, passenger, interaction };
 
   // ---- frame loop ----
   const clock = new THREE.Clock();
@@ -180,6 +204,7 @@ function boot() {
     cameraRig.update(now);
     radio.update(now);
     hands.update(now);
+    passenger.update(now);
     lcd.update(now);
 
     // The display's glow breathes a little while a track plays.

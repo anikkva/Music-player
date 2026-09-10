@@ -145,6 +145,13 @@ export function createInteraction({
   domElement.addEventListener('wheel', onWheel, { capture: true, passive: false });
 
   return {
+    /**
+     * Registers a hit target that is not part of the radio — the passenger's
+     * knee arrives late, when her model finishes loading.
+     */
+    addTarget(mesh) {
+      if (mesh && !targets.includes(mesh)) targets.push(mesh);
+    },
     setBusy(busy) {
       domElement.classList.toggle('busy', busy);
       if (busy) setHovered(null);
