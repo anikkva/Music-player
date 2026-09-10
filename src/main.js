@@ -9,7 +9,7 @@ import { createDriving } from './driving.js';
 import { createPassenger, createDriverLegs } from './passenger.js';
 import { createRadio } from './radio.js';
 import { createLcd } from './lcd.js';
-import { createHand } from './hand.js';
+import { createHands } from './hand.js';
 import { createCameraRig } from './camera.js';
 import { createInteraction } from './interaction.js';
 import { angleToVolume, volumeToAngle, MIN_ANGLE, MAX_ANGLE } from './knob.js';
@@ -64,8 +64,12 @@ function boot() {
   radio.lcdMesh.material.map = lcd.texture;
   radio.lcdMesh.material.needsUpdate = true;
 
-  const hand = createHand();
-  radio.group.add(hand.group);
+  // Hands: both resting on the wheel, the right one leaving it for the radio.
+  const hands = createHands({ wheel: interior.wheel, scene });
+
+  // The faceplate's outward normal, which is the direction a fingertip
+  // approaches a control from.
+  const faceNormal = new THREE.Vector3(0, 0, 1).applyQuaternion(radio.group.quaternion);
 
   // ---- radio ----
   const player = createPlayer({
@@ -121,11 +125,10 @@ function boot() {
 
   async function activate(controlId) {
     if (controlId === 'tuneKnob') return; // handled by dragging, not clicking
-    if (hand.isBusy() || hand.isHolding()) return;
+    if (hands.isBusy() || hands.isHolding()) return;
 
     interaction.setBusy(true);
-    const target = radio.controls[controlId].position.clone();
-    const touched = await hand.pressAt(target);
+    const touched = await hands.pressAt(radio.worldPositionOf(controlId), faceNormal);
     if (touched) {
       // The action fires on contact, not on click.
       radio.pressButton(controlId);
@@ -144,11 +147,11 @@ function boot() {
     onActivate: activate,
     onKnobDelta: (id, delta, phase) => {
       if (id !== 'tuneKnob') return;
-      if (phase.grab) hand.grabAt(radio.controls.tuneKnob.position.clone());
-      if (phase.release) { hand.release(); return; }
+      if (phase.grab) hands.grabAt(radio.worldPositionOf('tuneKnob'), faceNormal);
+      if (phase.release) { hands.release(); return; }
       if (delta) {
         applyKnobDelta(delta);
-        hand.setGrabSpin(-knobAngle);
+        hands.setGrabSpin(-knobAngle);
       }
     },
   });
@@ -164,7 +167,7 @@ function boot() {
   });
 
   // Debug handle, handy when checking framing from the console.
-  window.__player = { camera, radio, cameraRig, scene, player, renderer, render, lcd, hand };
+  window.__player = { camera, radio, cameraRig, scene, player, renderer, render, lcd, hands };
 
   // ---- frame loop ----
   const clock = new THREE.Clock();
@@ -176,7 +179,7 @@ function boot() {
     interior.wheel.rotation.z = driving.steer(now);
     cameraRig.update(now);
     radio.update(now);
-    hand.update(now);
+    hands.update(now);
     lcd.update(now);
 
     // The display's glow breathes a little while a track plays.
