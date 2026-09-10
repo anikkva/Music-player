@@ -2,7 +2,7 @@
 // outside the glass.
 
 import * as THREE from 'three';
-import { loadPanorama } from './textures.js';
+import { proceduralPanorama } from './textures.js';
 
 export function isWebGLAvailable() {
   try {
@@ -32,14 +32,11 @@ export function createScene(canvas) {
   // Panorama sphere, seen through the windows.
   const sky = new THREE.Mesh(
     new THREE.SphereGeometry(30, 64, 40),
-    new THREE.MeshBasicMaterial({ side: THREE.BackSide, toneMapped: false }),
+    new THREE.MeshBasicMaterial({
+      map: proceduralPanorama(), side: THREE.BackSide, toneMapped: false,
+    }),
   );
   scene.add(sky);
-
-  loadPanorama('assets/textures/panorama.jpg').then((tex) => {
-    sky.material.map = tex;
-    sky.material.needsUpdate = true;
-  });
 
   // Night cabin. It still reads as night, but every surface gets enough light
   // to show its shape — a cabin lit only by the display was unreadable.

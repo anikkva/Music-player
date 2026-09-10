@@ -1,0 +1,20 @@
+[build]
+  command = "sh netlify-build.sh"
+  publish = "dist"
+
+# No bundler and no dependencies — the build is a copy step.
+[build.environment]
+  NODE_VERSION = "22"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Source files change often while the scene is being tuned; don't let a stale
+# module hang around in a CDN cache.
+[[headers]]
+  for = "/src/*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"

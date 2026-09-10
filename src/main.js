@@ -1,7 +1,7 @@
 // Entry point: builds the scene and wires the physical controls to the player.
 
 import * as THREE from 'three';
-import { TRACKS } from './tracks.js';
+import { STATIONS } from './stations.js';
 import { createPlayer, STATUS } from './player.js';
 import { createScene, isWebGLAvailable } from './scene.js';
 import { createInterior } from './interior.js';
@@ -60,17 +60,18 @@ function boot() {
   const hand = createHand();
   radio.group.add(hand.group);
 
-  // ---- audio ----
+  // ---- radio ----
   const player = createPlayer({
-    tracks: TRACKS,
-    onTrackChange: (track) => lcd.setTrack(track),
+    stations: STATIONS,
+    onStationChange: (station) => lcd.setStation(station),
     onStatus: (status) => {
       if (status === STATUS.NO_SIGNAL) lcd.flashStatus('NO SIGNAL', 1600);
-      if (status === STATUS.END) lcd.flashStatus('END OF TAPE', 6000);
+      if (status === STATUS.DEAD_AIR) lcd.flashStatus('DEAD AIR', 6000);
       if (status === STATUS.PAUSED) lcd.flashStatus('PAUSE', 900);
+      if (status === STATUS.TUNING) lcd.flashStatus('TUNING', 1100);
     },
   });
-  lcd.setTrack(TRACKS[0]);
+  lcd.setStation(STATIONS[0]);
 
   // ---- camera, aimed at the radio for the opening frame ----
   const toRadio = radio.group.position.clone().normalize();
@@ -104,9 +105,9 @@ function boot() {
   };
 
   const LABELS = {
-    seekPrev: '◀ ПРЕДЫДУЩИЙ', seekNext: 'СЛЕДУЮЩИЙ ▶',
-    slotPrev: '◀ ПРЕДЫДУЩИЙ', slotNext: 'СЛЕДУЮЩИЙ ▶',
-    volKnob: 'PLAY / PAUSE', tuneKnob: 'ГРОМКОСТЬ',
+    seekPrev: '◀ ПРЕДЫДУЩАЯ СТАНЦИЯ', seekNext: 'СЛЕДУЮЩАЯ СТАНЦИЯ ▶',
+    slotPrev: '◀ ПРЕДЫДУЩАЯ СТАНЦИЯ', slotNext: 'СЛЕДУЮЩАЯ СТАНЦИЯ ▶',
+    volKnob: 'ВКЛ / ПАУЗА', tuneKnob: 'ГРОМКОСТЬ',
     am: 'AM', fm: 'FM', preset: 'PRESET', eject: 'EJECT',
     ejectArrow: 'EJECT', cassette: 'КАССЕТА',
   };

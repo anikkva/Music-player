@@ -9,8 +9,8 @@ const H = 288;
 const PAD = 34;
 const VIEW = W - PAD * 2;
 
-const TITLE_FONT = '600 96px ui-monospace, "SF Mono", Menlo, monospace';
-const ARTIST_FONT = '600 52px ui-monospace, "SF Mono", Menlo, monospace';
+const NAME_FONT = '600 96px ui-monospace, "SF Mono", Menlo, monospace';
+const GENRE_FONT = '600 52px ui-monospace, "SF Mono", Menlo, monospace';
 
 export function createLcd() {
   const canvas = document.createElement('canvas');
@@ -22,13 +22,13 @@ export function createLcd() {
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 8;
 
-  let title = '';
-  let artist = '';
+  let name = '';
+  let genre = '';
   let status = '';
   let statusUntil = 0;
   let volume = null;
   let volumeUntil = 0;
-  let titleStart = 0;
+  let nameStart = 0;
 
   function background() {
     const g = ctx.createLinearGradient(0, 0, 0, H);
@@ -86,27 +86,27 @@ export function createLcd() {
     background();
 
     if (status && now < statusUntil) {
-      segmentText(status, TITLE_FONT, W / 2, H / 2, 'center');
+      segmentText(status, NAME_FONT, W / 2, H / 2, 'center');
       texture.needsUpdate = true;
       return;
     }
 
-    // Title, scrolling when it overflows the display.
-    ctx.font = TITLE_FONT;
-    const titleWidth = ctx.measureText(title).width;
-    const offset = marqueeCycleOffset(titleWidth, VIEW, now - titleStart, 55, 1600);
+    // Station name, scrolling when it overflows the display.
+    ctx.font = NAME_FONT;
+    const nameWidth = ctx.measureText(name).width;
+    const offset = marqueeCycleOffset(nameWidth, VIEW, now - nameStart, 55, 1600);
 
     ctx.save();
     ctx.beginPath();
     ctx.rect(PAD, 0, VIEW, H);
     ctx.clip();
-    segmentText(title, TITLE_FONT, PAD - offset, H * 0.36);
+    segmentText(name, NAME_FONT, PAD - offset, H * 0.36);
     ctx.restore();
 
     if (volume !== null && now < volumeUntil) {
       drawVolumeBar();
     } else {
-      segmentText(artist, ARTIST_FONT, PAD, H * 0.72);
+      segmentText(genre, GENRE_FONT, PAD, H * 0.72);
     }
 
     texture.needsUpdate = true;
@@ -114,10 +114,10 @@ export function createLcd() {
 
   return {
     texture,
-    setTrack(t) {
-      title = (t?.title ?? '').toUpperCase();
-      artist = (t?.artist ?? '').toUpperCase();
-      titleStart = performance.now();
+    setStation(station) {
+      name = (station?.name ?? '').toUpperCase();
+      genre = (station?.genre ?? '').toUpperCase();
+      nameStart = performance.now();
     },
     /** Takes over the whole display for `ms` — used for NO SIGNAL etc. */
     flashStatus(text, ms = 1400) {

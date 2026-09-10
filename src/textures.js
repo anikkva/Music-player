@@ -302,22 +302,3 @@ export function grilleTexture() {
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
-
-/**
- * Loads a generated panorama from assets/textures, falling back to the
- * procedural one if the file is absent or fails to decode.
- */
-export function loadPanorama(url) {
-  return new Promise((resolve) => {
-    new THREE.TextureLoader().load(
-      url,
-      (tex) => {
-        tex.colorSpace = THREE.SRGBColorSpace;
-        tex.mapping = THREE.EquirectangularReflectionMapping;
-        resolve(tex);
-      },
-      undefined,
-      () => resolve(proceduralPanorama()),
-    );
-  });
-}
