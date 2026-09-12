@@ -15,9 +15,16 @@ mkdir -p dist
 cp index.html dist/
 cp -R styles dist/
 cp -R src dist/
+
+# Everything the scene loads at runtime — the cabin, the two people, the
+# panorama — except the audio. Those mp3s were development scratch and the
+# player streams radio now, so they have no business on a public URL.
+cp -R assets dist/
+rm -rf dist/assets/audio
 mkdir -p dist/assets
 cp -R assets/textures dist/assets/
 cp -R assets/models dist/assets/
 
 echo "dist/ assembled:"
 find dist -type f | sort
+echo "size: $(du -sh dist | cut -f1)"

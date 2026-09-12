@@ -24,6 +24,61 @@ const DRACO = 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/libs/drac
 // Materials drawn as alpha cutouts rather than solid surfaces.
 const CUTOUT = /hair|lash/i;
 
+// How much of him is thrown away around the eye.
+//
+// The camera sits inside his skull, so his chest, shoulders and upper arms are
+// between 13 and 35 cm from it: looking down showed a wall of his own shirt
+// instead of his knees, and reaching across the car put his shoulder over a
+// third of the frame.
+//
+// Pushing the camera's near plane out did hide it, and wrecked him at the
+// wide end of the zoom, because a near plane cuts on depth along the view
+// axis: his thighs sat 0.7 m away but 65 degrees off-centre, which is barely
+// 0.3 m of depth, and they were sliced open. What is wanted is a sphere, not a
+// plane — everything within arm's reach of the eye gone, whichever way you are
+// looking — so it is done per fragment on his own materials and nothing else
+// in the cabin is touched.
+//
+// The radius is not free to choose. His shirt is a thin surface, so the sphere
+// cuts a band out of it, and whatever falls outside the band survives as a
+// curved flap hanging in mid-air — the white "sail" over his lap. At 0.38 that
+// leftover was most of his shirt front. Pushed out to 0.46 it is down to the
+// cuff at each wrist, which is where a cuff belongs; further still and the
+// sphere starts eating his thighs, which begin around 0.49.
+const EYE_CLEARANCE = 0.46;
+
+/**
+ * Discards fragments closer to the camera than `EYE_CLEARANCE`, radially.
+ * Distance comes from the view-space position the vertex shader already
+ * computes, so this costs one varying and one compare.
+ */
+function hideNearTheEye(material) {
+  if (material.userData.eyeClipped) return;
+  material.userData.eyeClipped = true;
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uEyeClearance = { value: EYE_CLEARANCE };
+    material.userData.clearanceUniform = shader.uniforms.uEyeClearance;
+    shader.vertexShader = shader.vertexShader
+      .replace('void main() {', 'varying float vEyeDist;\nvoid main() {')
+      .replace(
+        '#include <project_vertex>',
+        '#include <project_vertex>\n  vEyeDist = length(mvPosition.xyz);',
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        'void main() {',
+        'uniform float uEyeClearance;\nvarying float vEyeDist;\nvoid main() {',
+      )
+      .replace(
+        '#include <clipping_planes_fragment>',
+        '#include <clipping_planes_fragment>\n  if (vEyeDist < uEyeClearance) discard;',
+      );
+  };
+  // Two programs would otherwise be cached under one key.
+  material.customProgramCacheKey = () => 'eye-clipped';
+  material.needsUpdate = true;
+}
+
 const FINGERS = ['Thumb', 'Index', 'Middle', 'Ring', 'Pinky'];
 
 // How tall he ends up. His own units are not trusted — a glTF may carry a
@@ -93,9 +148,23 @@ const LEG_FOLD = [
 // where the old lap used to be, which was inside his thighs and below what his
 // arms could still reach, so the solver gave up part-way and left two sleeves
 // sticking out of his legs.
-const HAND_ABOVE_THIGH = 0.075; // thigh half-thickness, so the palm rests on top
-const HAND_OUTWARD = 0.035;     // hands sit on the outside of each thigh
+// Measured against his own leg, not against an average one: in shorts his
+// thigh is a good deal thicker than the 7.5 cm first tried, and at that height
+// the whole hand sat inside it with only the fingertips out. What you saw were
+// the palm and cuff punching back through the skin as the leg moved.
+const HAND_ABOVE_THIGH = 0.125;
+const HAND_OUTWARD = 0.055;     // and off to the side, so a wrist cannot clip in
 const HAND_ALONG_THIGH = 0.55;  // fraction from hip to knee
+
+// He was the only still thing in the car: she breathes and settles, the cabin
+// sways, and he sat through it like furniture. Same idea as hers, a shade
+// slower — he is the one driving, so he holds himself a little steadier.
+const IDLE = {
+  breathPeriod: 4600,
+  breath: 0.013,
+  swayPeriod: 8900,
+  sway: 0.011,
+};
 
 const REACH_MS = 420;
 const RETURN_MS = 360;
@@ -128,6 +197,7 @@ export function createDriver({ wheel }) {
   const bone = (name) => bones.get(prefix + name);
 
   let anim = null; // an active reach, or null while both hands rest
+  let chestBindQ = null; // his settled posture, breathing measured from it
   const restRight = new THREE.Vector3();
   const goal = new THREE.Vector3();
 
@@ -213,7 +283,9 @@ export function createDriver({ wheel }) {
       // alpha factor at zero, which cuts the whole head of hair away. Alpha
       // has to come from the texture and nothing else.
       for (const material of Array.isArray(o.material) ? o.material : [o.material]) {
-        if (!material?.map || !CUTOUT.test(material.name ?? '')) continue;
+        if (!material) continue;
+        hideNearTheEye(material);
+        if (!material.map || !CUTOUT.test(material.name ?? '')) continue;
         material.opacity = 1;
         material.alphaTest = 0.5;
         material.transparent = false; // a cutout, not a blend
@@ -296,6 +368,10 @@ export function createDriver({ wheel }) {
     for (const [b] of reachChain()) if (b) restPose.set(b, b.quaternion.clone());
     restPoint('right', restRight);
 
+    // Captured after the lean and the arm placement, so breathing is measured
+    // from the posture he actually holds rather than from the bind pose.
+    chestBindQ = bone('Spine2')?.quaternion.clone() ?? null;
+
     return group;
   })();
 
@@ -322,6 +398,17 @@ export function createDriver({ wheel }) {
   }
 
   function update(now) {
+    // Breathing runs whether or not he is reaching, and it runs first: the
+    // arm is solved to a world-space goal, so moving his chest underneath it
+    // afterwards would drag the hand off the button.
+    const chest = bone('Spine2');
+    if (chest && chestBindQ) {
+      chest.quaternion.copy(chestBindQ);
+      rotateWorld(chest, WORLD_X,
+        Math.sin(now / IDLE.breathPeriod) * IDLE.breath
+        + Math.sin(now / IDLE.swayPeriod + 0.7) * IDLE.sway);
+    }
+
     if (!anim || !bone('RightHand')) return;
 
     const elapsed = now - anim.startedAt;

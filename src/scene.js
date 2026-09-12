@@ -2,7 +2,7 @@
 // outside the glass.
 
 import * as THREE from 'three';
-import { proceduralPanorama } from './textures.js';
+import { proceduralPanorama, loadPanorama } from './textures.js';
 
 export function isWebGLAvailable() {
   try {
@@ -26,18 +26,19 @@ export function createScene(canvas) {
 
   // The camera sits at the driver's eyes and never moves — turning it is
   // turning a head, and zoom is a focal-length change, not a dolly.
-  // The near plane is far out on purpose. The camera sits inside the driver's
-  // own skull, so his chest, shoulders and upper arms are between 13 and 35 cm
-  // from the lens: looking down showed a wall of his own shirt instead of his
-  // knees, and reaching across the car put his shoulder over a third of the
-  // frame. Clipping at 34 cm takes the body the eye could never see anyway and
-  // leaves everything a driver actually looks at — his knees at 0.73 m, his
-  // hands at 0.70, the wheel, the radio at 0.85 — untouched.
-  const NEAR = 0.34;
+  // Kept close. Pushing it out to hide the driver's own chest looked right
+  // dead ahead and shredded him at the edges: clipping is done on depth along
+  // the view axis, so at the wide end of the zoom his thighs — 0.7 m away but
+  // 65 degrees off-centre — sat at barely 0.3 m of depth and were sliced open.
+  // Hiding his body is his own job now, by radius, in driver.js.
+  const NEAR = 0.05;
   const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, NEAR, 100);
   camera.position.set(0, 0, 0);
 
   // Panorama sphere, seen through the windows.
+  // A photographed 360 of a wet street at dusk. The drawn one it replaces read
+  // as a cartoon the moment anything photoreal sat in front of it. It starts
+  // on the procedural sky so the first frame is never empty, then swaps.
   const sky = new THREE.Mesh(
     new THREE.SphereGeometry(30, 64, 40),
     new THREE.MeshBasicMaterial({
@@ -45,6 +46,11 @@ export function createScene(canvas) {
     }),
   );
   scene.add(sky);
+
+  loadPanorama('assets/textures/panorama.jpg').then((tex) => {
+    sky.material.map = tex;
+    sky.material.needsUpdate = true;
+  });
 
   // Night cabin. It still reads as night, but every surface gets enough light
   // to show its shape — a cabin lit only by the display was unreadable.

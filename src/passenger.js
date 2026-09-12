@@ -132,6 +132,13 @@ function lookAngles(bones, head) {
   return { neck, chest: Math.max(-CHEST_MAX, Math.min(CHEST_MAX, rest)) };
 }
 
+// How far the elbow is broken before her hands are solved onto her legs, and
+// how far up the thigh from the knee they land. The bend alone was not enough:
+// descent straightens it again on the way to a target it can only just reach,
+// so the target has to come in as well.
+const ELBOW_BEND = 0.9;
+const HAND_UP_THIGH = 0.38;
+
 /** Puts her hands on her knees and drapes the fingers over them. */
 function restHandsOnKnees(bones, root) {
   const at = new THREE.Vector3();
@@ -139,15 +146,31 @@ function restHandsOnKnees(bones, root) {
 
   for (const limb of [LEFT, RIGHT]) {
     const knee = pick(bones, limb.lowerLeg);
+    const hip = pick(bones, limb.upperLeg);
     const hand = pick(bones, limb.hand);
     if (!knee || !hand) continue;
 
     root.updateWorldMatrix(true, true);
     knee.getWorldPosition(at);
+    // Back up the thigh from the kneecap. The knee is at the far end of her
+    // reach, and descent answers a target at full stretch with a straight arm
+    // — which is why she sat there with two rods hanging off her shoulders.
+    // Bringing the target in leaves no straight-armed solution to find.
+    if (hip) at.lerp(hip.getWorldPosition(new THREE.Vector3()), HAND_UP_THIGH);
 
-    // On top of the knee and a little back along the thigh, which is where a
-    // hand actually rests — right on the kneecap slides off.
-    target.copy(at).add(new THREE.Vector3(0, 0.06, 0.08));
+    // Break the elbow before solving. Descent converges on whatever solution
+    // is nearest the pose it starts from, and from a straight arm the nearest
+    // way to put a hand on a knee is another straight arm — which is why she
+    // sat there with two rods hanging off her shoulders. Her knee is well
+    // inside her reach, so there is slack for the bend to survive the solve.
+    const foreArm = pick(bones, limb.foreArm);
+    if (foreArm) {
+      foreArm.updateWorldMatrix(true, false);
+      rotateWorld(foreArm, WORLD_X, ELBOW_BEND);
+    }
+
+    // On top of the leg, not against its side.
+    target.copy(at).add(new THREE.Vector3(0, 0.07, 0.01));
     solveChain({
       chain: [
         [pick(bones, limb.foreArm), 0.5],

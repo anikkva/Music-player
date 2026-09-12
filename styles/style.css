@@ -120,42 +120,37 @@ html, body {
 }
 .bp-bar-right { opacity: 0.65; }
 
-.bp-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
-  gap: 14px;
+.bp-lede {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.7;
+  letter-spacing: 0.03em;
+  color: rgba(232, 226, 212, 0.72);
 }
-@media (max-width: 720px) {
-  .bp-grid { grid-template-columns: 1fr; }
-}
+.bp-lede b { color: var(--bp-key); font-weight: 700; }
 
-.bp-panel {
+.bp-grid {
   border: 1px solid var(--bp-line);
-  padding: 0 0 14px;
   background: rgba(207, 240, 4, 0.02);
 }
-.bp-panel-head {
-  margin: 0 0 12px;
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--bp-line);
-  background: rgba(207, 240, 4, 0.08);
-  color: var(--bp-key);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-}
 
-.bp-keys { margin: 0; padding: 0 12px; font-size: 12px; }
+.bp-keys {
+  margin: 0;
+  padding: 4px 14px;
+  font-size: 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  column-gap: 26px;
+}
 .bp-keys > div {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  padding: 5px 0;
+  gap: 12px;
+  padding: 7px 0;
   border-bottom: 1px dashed rgba(207, 240, 4, 0.12);
 }
-.bp-keys > div:last-child { border-bottom: 0; }
 .bp-keys dt {
-  flex: 0 0 82px;
+  flex: 0 0 84px;
   padding: 2px 6px;
   border: 1px solid rgba(0, 217, 224, 0.45);
   color: var(--bp-cyan);
@@ -164,38 +159,6 @@ html, body {
   text-align: center;
 }
 .bp-keys dd { margin: 0; letter-spacing: 0.10em; }
-
-.bp-fine {
-  margin: 12px 12px 0;
-  font-size: 9.5px;
-  line-height: 1.7;
-  letter-spacing: 0.10em;
-  color: rgba(232, 226, 212, 0.28);
-}
-
-.bp-text {
-  margin: 0 12px 10px;
-  font-size: 12.5px;
-  line-height: 1.75;
-  letter-spacing: 0.03em;
-  color: rgba(232, 226, 212, 0.72);
-}
-.bp-text b { color: var(--bp-key); font-weight: 700; }
-
-.bp-list {
-  margin: 12px 12px 0;
-  padding: 0;
-  list-style: none;
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-  color: rgba(207, 240, 4, 0.5);
-}
-.bp-list li { padding: 4px 0; }
-.bp-list span {
-  display: inline-block;
-  min-width: 26px;
-  color: rgba(232, 226, 212, 0.25);
-}
 
 #start {
   display: flex;

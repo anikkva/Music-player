@@ -433,3 +433,24 @@ export function roadTexture() {
   tex.wrapT = THREE.RepeatWrapping;
   return tex;
 }
+
+/**
+ * The photographic panorama, with the procedural one standing in if it cannot
+ * be fetched. Resolves either way: a missing background should dim the scene,
+ * not break it.
+ */
+export function loadPanorama(url) {
+  return new Promise((resolve) => {
+    new THREE.TextureLoader().load(
+      url,
+      (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        tex.mapping = THREE.EquirectangularReflectionMapping;
+        tex.anisotropy = 8;
+        resolve(tex);
+      },
+      undefined,
+      () => resolve(proceduralPanorama()),
+    );
+  });
+}
