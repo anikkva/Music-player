@@ -128,6 +128,14 @@ function boot() {
       clearTimeout(lookAwayTimer);
       lookAwayTimer = setTimeout(() => passenger.lookAway(), 5000);
     },
+    // Petting him. She is the one who can reach, so the hand that lands on him
+    // is hers; he answers the only way this model can.
+    cat: () => {
+      cat.pet();
+      passenger.lookAtDriver();
+      clearTimeout(lookAwayTimer);
+      lookAwayTimer = setTimeout(() => passenger.lookAway(), 4000);
+    },
     // Decorative: they depress and light up, but nothing happens.
     am: null, fm: null, preset: null, eject: null, ejectArrow: null, cassette: null,
   };
@@ -139,6 +147,7 @@ function boot() {
     am: 'AM', fm: 'FM', preset: 'PRESET', eject: 'EJECT',
     ejectArrow: 'EJECT', cassette: 'КАССЕТА',
     knee: 'ДОТРОНУТЬСЯ',
+    cat: 'ПОГЛАДИТЬ',
   };
 
   let lookAwayTimer = 0;
@@ -149,6 +158,12 @@ function boot() {
 
   /** Where a control is, and which way it faces the driver. */
   function aimAt(controlId) {
+    if (controlId === 'cat') {
+      // Straight down onto his back. Aiming at his centre with the normal
+      // pointing at the driver, the way her knee works, sent the hand through
+      // him: the target was inside the animal and the approach was sideways.
+      return [cat.petPoint(), new THREE.Vector3(0, 1, 0)];
+    }
     if (controlId === 'knee') {
       const at = passenger.kneeWorldPosition();
       // The driver's eyes are the origin, so the way out of her knee toward
@@ -205,6 +220,11 @@ function boot() {
   passenger.ready
     .then(() => interaction.addTarget(passenger.knee))
     .catch((e) => console.error('passenger failed to load', e));
+
+  // He only becomes clickable once there is a cat to click.
+  cat.ready
+    .then(() => interaction.addTarget(cat.hit))
+    .catch(() => { /* already reported where he is loaded */ });
 
   // ---- start gesture ----
   // It only puts the user in the driver's seat: the tape is loaded but silent

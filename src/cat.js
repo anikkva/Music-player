@@ -29,11 +29,36 @@ const FACING = -0.55;
 // straight to full speed reads as a dropped frame.
 const SPIN_LERP = 0.06;
 
+// Being petted sets him off whether or not the radio is on, and faster than
+// the radio alone does, so the reaction reads even mid-song.
+const PET_MS = 4200;
+const PET_SPEED = 1.9;
+
+// Height of his back above the cushion — where a hand lands.
+const BACK_HEIGHT = 0.235;
+
+// The ball the raycaster sees. Bigger than it needs to be: he is small, low,
+// and half behind the seat divider, and a target nobody can hit may as well
+// not exist.
+const HIT_RADIUS = 0.24;
+
 export function createCat() {
   const group = new THREE.Group();
   let mixer = null;
   let action = null;
   let speed = 0;
+  let pettedUntil = 0;
+
+  // Parented to the group rather than moved each frame like the passenger's
+  // knee: this group is unscaled, so a sphere hung off it comes out the size
+  // it was asked for. He bobs a little as he spins, by less than the ball.
+  const hit = new THREE.Mesh(
+    new THREE.SphereGeometry(HIT_RADIUS, 12, 10),
+    new THREE.MeshBasicMaterial({ visible: false }),
+  );
+  hit.userData.control = 'cat';
+  hit.position.y = TARGET_HEIGHT / 2;
+  group.add(hit);
 
   const ready = (async () => {
     const { GLTFLoader } = await import(
@@ -81,16 +106,38 @@ export function createCat() {
     return group;
   })();
 
+  /** A hand landed on him. He is delighted, in the only way he knows. */
+  function pet() {
+    pettedUntil = performance.now() + PET_MS;
+  }
+
   /**
    * @param dt seconds since the last frame
    * @param playing whether the radio is on; he spins to it
    */
   function update(dt, playing) {
     if (!mixer) return;
-    speed += ((playing ? 1 : 0) - speed) * SPIN_LERP;
+    const petted = performance.now() < pettedUntil;
+    const target = petted ? PET_SPEED : (playing ? 1 : 0);
+    speed += (target - speed) * SPIN_LERP;
     if (speed < 0.001) return; // parked: leave him on the frame he stopped at
     mixer.update(dt * speed);
   }
 
-  return { group, ready, update };
+  return {
+    group,
+    hit,
+    ready,
+    update,
+    pet,
+    /** World centre of him, for a hand to aim at. */
+    worldPosition: () => hit.getWorldPosition(new THREE.Vector3()),
+    /**
+     * Where a hand should land: the top of his back, not his middle. Aimed at
+     * the middle the arm simply drove through him — the target was inside the
+     * animal. Petting comes down from above, which is also how anyone pets a
+     * cat.
+     */
+    petPoint: () => group.localToWorld(new THREE.Vector3(0, BACK_HEIGHT, 0.02)),
+  };
 }
