@@ -187,6 +187,11 @@ function boot() {
       // Nobody reaches for her knee any more: the hand that did belonged to
       // the driver. You are still there to touch it, you are simply not drawn.
       ACTIONS.knee();
+    } else if (controlId === 'cat') {
+      // A stroke down his back, not a tap on it.
+      const path = cat.petPath();
+      const touched = await passenger.strokeAlong(path.from, path.to, new THREE.Vector3(0, 1, 0));
+      if (touched) ACTIONS.cat();
     } else {
       const touched = await passenger.reachTo(...aimAt(controlId));
       if (touched) {

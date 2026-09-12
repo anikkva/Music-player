@@ -34,8 +34,22 @@ const SPIN_LERP = 0.06;
 const PET_MS = 4200;
 const PET_SPEED = 1.9;
 
-// Height of his back above the cushion — where a hand lands.
-const BACK_HEIGHT = 0.235;
+// Roughly how high his back is above the cushion. Only a fallback now, for
+// when a ray misses him entirely.
+const BACK_HEIGHT = 0.22;
+
+// Where a hand strokes: found by dropping rays onto him, not written down.
+//
+// Two guesses at it were wrong in different ways — one ran the stroke backwards
+// and ended on his face, the other floated six centimetres over his back —
+// because the numbers were read off a bounding box that a rotated, animated
+// model does not respect. Rays hit the fur wherever the fur actually is.
+//
+// The path runs along his body, which lies down the group's local z, from just
+// behind his head to the base of his tail.
+const STROKE_FROM_Z = 0.10;
+const STROKE_TO_Z = -0.16;
+const RAY_FROM_ABOVE = 0.45;
 
 // The ball the raycaster sees. Bigger than it needs to be: he is small, low,
 // and half behind the seat divider, and a target nobody can hit may as well
@@ -48,6 +62,7 @@ export function createCat() {
   let action = null;
   let speed = 0;
   let pettedUntil = 0;
+  let body = null; // his mesh, for finding the fur under a hand
 
   // Parented to the group rather than moved each frame like the passenger's
   // knee: this group is unscaled, so a sphere hung off it comes out the size
@@ -92,6 +107,8 @@ export function createCat() {
     // Centre him left-to-right and front-to-back on his own bulk, and sit his
     // feet — not his origin — on the cushion.
     model.position.set(-centre.x, -scaled.min.y, -centre.z);
+
+    model.traverse((o) => { if (o.isMesh && !body) body = o; });
 
     group.add(model);
     group.position.copy(AT);
@@ -139,5 +156,24 @@ export function createCat() {
      * cat.
      */
     petPoint: () => group.localToWorld(new THREE.Vector3(0, BACK_HEIGHT, 0.02)),
+    /**
+     * The two ends of a stroke down his back, in world space, on the fur.
+     * Falls back to a point above the cushion if the ray misses, so a click
+     * never sends a hand somewhere absurd.
+     */
+    petPath: () => {
+      const onFur = (localZ) => {
+        const at = group.localToWorld(new THREE.Vector3(0, 0, localZ));
+        const fallback = at.clone().setY(group.position.y + BACK_HEIGHT);
+        if (!body) return fallback;
+        const ray = new THREE.Raycaster(
+          at.clone().setY(group.position.y + RAY_FROM_ABOVE),
+          new THREE.Vector3(0, -1, 0),
+        );
+        const hit = ray.intersectObject(body, true)[0];
+        return hit ? hit.point : fallback;
+      };
+      return { from: onFur(STROKE_FROM_Z), to: onFur(STROKE_TO_Z) };
+    },
   };
 }

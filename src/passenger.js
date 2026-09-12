@@ -16,7 +16,7 @@
 // the cabin — see pose.js for why that is not fussiness.
 
 import * as THREE from 'three';
-import { WORLD_X, WORLD_Y, rotateWorld, sitDown, solveChain, curlFingers } from './pose.js';
+import { WORLD_X, WORLD_Y, rotateWorld, sitDown, solveChain, curlFingers, aimHand } from './pose.js';
 
 const MODEL = 'assets/models/passenger2/passenger.glb';
 const DRACO = 'https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/libs/draco/';
@@ -87,6 +87,24 @@ const REACH_MS = 460;
 const RETURN_MS = 380;
 const TOUCH_GAP = 0.02;
 const REACH_PASSES = 20;
+
+// A stroke, rather than a poke: once her hand is down it travels the length of
+// whatever it landed on before lifting off.
+const STROKE_MS = 900;
+
+// How hard the elbow is pushed up each frame before the arm is solved.
+//
+// Descent has no opinion about where the elbow goes — it finds the nearest
+// solution, and from a hand resting in her lap the nearest one keeps the elbow
+// low and swings the whole arm out sideways, which reads as a person groping
+// rather than petting. Turning the upper arm about the line from her shoulder
+// to the goal swings the elbow around that line without moving the hand off
+// it, so the bias and the solver do not fight: the solver holds the hand on
+// target, the bias picks which of the solutions holding it there is used.
+const ELBOW_LIFT = 0.10;
+
+// How far above the hand the elbow is allowed to get before the bias stops.
+const ELBOW_ABOVE_HAND = 0.07;
 
 /** A bone by its unprefixed name. */
 const pick = (bones, name) => bones.get(B + name);
@@ -355,8 +373,11 @@ export function createPassenger() {
   /**
    * Sends her left hand to a world point and resolves at the moment it
    * arrives — the caller fires the action on contact, as the spec requires.
+   *
+   * `end`, when given, turns the gesture into a stroke: the hand lands on
+   * `target` and then travels to `end` before lifting.
    */
-  function reachTo(target, normal) {
+  function gesture(target, normal, end = null) {
     const hand = pick(bones, LEFT.hand);
     if (!hand || reach) return Promise.resolve(false);
     return new Promise((resolve) => {
@@ -366,6 +387,8 @@ export function createPassenger() {
         // millimetres and starting from the imagined one shows as a twitch.
         from: hand.getWorldPosition(new THREE.Vector3()),
         target: target.clone().addScaledVector(normal, TOUCH_GAP),
+        end: end ? end.clone().addScaledVector(normal, TOUCH_GAP) : null,
+        normal: normal.clone().normalize(),
         startedAt: performance.now(),
         touched: false,
         resolve,
@@ -373,21 +396,33 @@ export function createPassenger() {
     });
   }
 
+  const reachTo = (target, normal) => gesture(target, normal);
+  const strokeAlong = (from, to, normal) => gesture(from, normal, to);
+
+  const liftAxis = new THREE.Vector3();
+  const strokeDir = new THREE.Vector3();
+
   /** Runs after the chest, which the arm hangs off. */
   function updateReach(now) {
     if (!reach) return;
     const hand = pick(bones, LEFT.hand);
     if (!hand) { reach = null; return; }
 
+    const strokeMs = reach.end ? STROKE_MS : 0;
     const elapsed = now - reach.startedAt;
+
     if (elapsed < REACH_MS) {
+      // Coming down onto it.
       reachGoal.lerpVectors(reach.from, reach.target, easeOut(elapsed / REACH_MS));
     } else if (!reach.touched) {
       reach.touched = true;
       reachGoal.copy(reach.target);
       reach.resolve?.(true);
+    } else if (elapsed < REACH_MS + strokeMs) {
+      // Travelling along it.
+      reachGoal.lerpVectors(reach.target, reach.end, easeInOut((elapsed - REACH_MS) / strokeMs));
     } else {
-      const back = (elapsed - REACH_MS) / RETURN_MS;
+      const back = (elapsed - REACH_MS - strokeMs) / RETURN_MS;
       if (back >= 1) {
         // Snap home rather than solving back: descent leaves a little drift
         // each time, the remembered posture does not.
@@ -395,12 +430,49 @@ export function createPassenger() {
         reach = null;
         return;
       }
-      reachGoal.lerpVectors(reach.from, reach.target, 1 - easeIn(back));
+      // Lift off from wherever the stroke ended, back to where it began.
+      reachGoal.lerpVectors(reach.end ?? reach.target, reach.from, easeIn(back));
+    }
+
+    // Elbow up first, hand on target second. The lift turns the upper arm
+    // about the line from her shoulder to the goal, which is the one rotation
+    // that cannot move the hand off that line, so the solve below is free to
+    // put the hand exactly where it belongs.
+    const upperArm = pick(bones, LEFT.upperArm);
+    const foreArm = pick(bones, LEFT.foreArm);
+    if (upperArm && foreArm) {
+      upperArm.updateWorldMatrix(true, false);
+      const shoulderAt = upperArm.getWorldPosition(new THREE.Vector3());
+      const elbowAt = foreArm.getWorldPosition(new THREE.Vector3());
+      // Only while it is still low. The bias is applied every frame, so left
+      // uncapped it would keep turning the arm about that line for as long as
+      // the gesture lasted and wind the elbow right over the top.
+      if (elbowAt.y < reachGoal.y + ELBOW_ABOVE_HAND) {
+        liftAxis.copy(reachGoal).sub(shoulderAt);
+        if (liftAxis.lengthSq() > 1e-8) rotateWorld(upperArm, liftAxis.normalize(), ELBOW_LIFT);
+      }
     }
 
     solveChain({
       chain: reachChain(), end: hand, target: reachGoal, root: group, passes: REACH_PASSES,
     });
+
+    // And lay the palm along the stroke rather than leaving it wherever the
+    // arm happened to end. Without this the fingers point off at whatever
+    // angle descent left them and the hand reads as hovering, not touching.
+    if (reach.end) {
+      strokeDir.copy(reach.end).sub(reach.target);
+      if (strokeDir.lengthSq() > 1e-8) {
+        aimHand({
+          hand,
+          knuckles: FINGERS.map((f) => pick(bones, `${LEFT.hand}${f}1`)).filter(Boolean),
+          tips: FINGERS.map((f) => pick(bones, `${LEFT.hand}${f}4`)).filter(Boolean),
+          along: strokeDir.normalize(),
+          facing: reach.normal.clone().negate(), // palm down onto his back
+          root: group,
+        });
+      }
+    }
   }
 
   function update(now) {
@@ -450,6 +522,7 @@ export function createPassenger() {
     lookAtDriver: () => look(1),
     lookAway: () => look(0),
     reachTo,
+    strokeAlong,
     isBusy: () => reach !== null,
     kneeWorldPosition: () => knee.getWorldPosition(new THREE.Vector3()),
     isLoaded: () => head !== null,
