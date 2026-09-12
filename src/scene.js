@@ -26,11 +26,11 @@ export function createScene(canvas) {
 
   // The camera sits at the driver's eyes and never moves — turning it is
   // turning a head, and zoom is a focal-length change, not a dolly.
-  // Kept close. Pushing it out to hide the driver's own chest looked right
-  // dead ahead and shredded him at the edges: clipping is done on depth along
-  // the view axis, so at the wide end of the zoom his thighs — 0.7 m away but
-  // 65 degrees off-centre — sat at barely 0.3 m of depth and were sliced open.
-  // Hiding his body is his own job now, by radius, in driver.js.
+  // Kept close. It was once pushed out to 0.34 to hide the driver's own chest,
+  // which the camera sat inside; that shredded him at the wide end of the zoom,
+  // because clipping runs on depth along the view axis and his thighs measured
+  // barely 0.3 m of depth from 65 degrees off-centre. There is no driver model
+  // at all now, so nothing needs hiding and the plane can stay where it belongs.
   const NEAR = 0.05;
   const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, NEAR, 100);
   camera.position.set(0, 0, 0);

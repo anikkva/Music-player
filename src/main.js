@@ -7,9 +7,9 @@ import { createScene, isWebGLAvailable } from './scene.js';
 import { createCabin } from './cabin.js';
 import { createDriving } from './driving.js';
 import { createPassenger } from './passenger.js';
+import { createCat } from './cat.js';
 import { createRadio } from './radio.js';
 import { createLcd } from './lcd.js';
-import { createDriver } from './driver.js';
 import { createCameraRig } from './camera.js';
 import { createInteraction } from './interaction.js';
 import { angleToVolume, volumeToAngle, MIN_ANGLE, MAX_ANGLE } from './knob.js';
@@ -62,10 +62,19 @@ function boot() {
   radio.lcdMesh.material.map = lcd.texture;
   radio.lcdMesh.material.needsUpdate = true;
 
-  // The driver's own body, with his hands on the wheel. The camera sits
-  // inside his head, which is collapsed so it does not fill the frame.
-  const driver = createDriver({ wheel: cabin.wheel });
-  scene.add(driver.group);
+  // The cat rides the middle of the bench, and spins to the radio.
+  const cat = createCat();
+  scene.add(cat.group);
+  cat.ready.catch((e) => console.error('cat failed to load', e));
+
+  // There is no driver model. The camera sits where his eyes were, so his own
+  // chest and shoulders were always between the lens and everything else, and
+  // every attempt to hide them cut his geometry open somewhere: a near plane
+  // sliced his thighs at the wide end of the zoom, a radius left the far side
+  // of his shirt hanging in mid-air. You are the driver, and nothing is drawn
+  // for you — which is what most first-person views do anyway.
+  //
+  // She works the radio now. See passenger.reachTo.
 
   // The faceplate's outward normal, which is the direction a fingertip
   // approaches a control from.
@@ -156,14 +165,20 @@ function boot() {
 
   async function activate(controlId) {
     if (controlId === 'tuneKnob') return; // handled by dragging, not clicking
-    if (driver.isBusy()) return;
+    if (passenger.isBusy()) return;
 
     interaction.setBusy(true);
-    const touched = await driver.reachTo(...aimAt(controlId));
-    if (touched) {
-      // The action fires on contact, not on click.
-      radio.pressButton(controlId);
-      ACTIONS[controlId]?.();
+    if (controlId === 'knee') {
+      // Nobody reaches for her knee any more: the hand that did belonged to
+      // the driver. You are still there to touch it, you are simply not drawn.
+      ACTIONS.knee();
+    } else {
+      const touched = await passenger.reachTo(...aimAt(controlId));
+      if (touched) {
+        // The action fires on contact, not on click.
+        radio.pressButton(controlId);
+        ACTIONS[controlId]?.();
+      }
     }
     interaction.setBusy(false);
   }
@@ -212,7 +227,7 @@ function boot() {
   });
 
   // Debug handle, handy when checking framing from the console.
-  window.__player = { camera, radio, cameraRig, scene, player, renderer, render, lcd, driver, passenger, interaction };
+  window.__player = { camera, radio, cameraRig, scene, player, renderer, render, lcd, passenger, cat, interaction };
 
   // ---- frame loop ----
   const clock = new THREE.Clock();
@@ -226,8 +241,8 @@ function boot() {
     cabin.wheel.rotation.z = driving.steer(now);
     cameraRig.update(now);
     radio.update(now);
-    driver.update(now);
     passenger.update(now);
+    cat.update(dt, player.isPlaying());
     lcd.update(now);
 
     // The display's glow breathes a little while a track plays.

@@ -77,6 +77,16 @@ const IDLE = {
 };
 
 const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2);
+const easeOut = (t) => 1 - (1 - t) ** 3;
+const easeIn = (t) => t * t;
+
+// She works the radio now: the driver used to, and there is no driver any
+// more. Her left arm is the one that faces it — she sits on the right and the
+// unit hangs off the centre stack on her side of the wheel.
+const REACH_MS = 460;
+const RETURN_MS = 380;
+const TOUCH_GAP = 0.02;
+const REACH_PASSES = 20;
 
 /** A bone by its unprefixed name. */
 const pick = (bones, name) => bones.get(B + name);
@@ -311,6 +321,7 @@ export function createPassenger() {
     });
 
     restHandsOnKnees(bones, group);
+    for (const [b] of reachChain()) if (b) reachRest.set(b, b.quaternion.clone());
 
     if (head) headBindQ = head.quaternion.clone();
     if (chest) chestBindQ = chest.quaternion.clone();
@@ -329,6 +340,68 @@ export function createPassenger() {
 
   const worldKnee = new THREE.Vector3();
   const worldHip = new THREE.Vector3();
+
+  // Arm only. Both arms share a spine, so a chain that reaches through it
+  // answers one hand by dragging the other off the knee it was just placed on.
+  const reachChain = () => [
+    [pick(bones, LEFT.foreArm), 0.60],
+    [pick(bones, LEFT.upperArm), 0.50],
+  ];
+
+  let reach = null;              // an active reach, or null while her hands rest
+  const reachRest = new Map();   // the posture the arm snaps back to
+  const reachGoal = new THREE.Vector3();
+
+  /**
+   * Sends her left hand to a world point and resolves at the moment it
+   * arrives — the caller fires the action on contact, as the spec requires.
+   */
+  function reachTo(target, normal) {
+    const hand = pick(bones, LEFT.hand);
+    if (!hand || reach) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      reach = {
+        // From where the hand actually is: her chest breathes underneath it,
+        // so the rest pose and the real position drift apart by a few
+        // millimetres and starting from the imagined one shows as a twitch.
+        from: hand.getWorldPosition(new THREE.Vector3()),
+        target: target.clone().addScaledVector(normal, TOUCH_GAP),
+        startedAt: performance.now(),
+        touched: false,
+        resolve,
+      };
+    });
+  }
+
+  /** Runs after the chest, which the arm hangs off. */
+  function updateReach(now) {
+    if (!reach) return;
+    const hand = pick(bones, LEFT.hand);
+    if (!hand) { reach = null; return; }
+
+    const elapsed = now - reach.startedAt;
+    if (elapsed < REACH_MS) {
+      reachGoal.lerpVectors(reach.from, reach.target, easeOut(elapsed / REACH_MS));
+    } else if (!reach.touched) {
+      reach.touched = true;
+      reachGoal.copy(reach.target);
+      reach.resolve?.(true);
+    } else {
+      const back = (elapsed - REACH_MS) / RETURN_MS;
+      if (back >= 1) {
+        // Snap home rather than solving back: descent leaves a little drift
+        // each time, the remembered posture does not.
+        for (const [b, q] of reachRest) b.quaternion.copy(q);
+        reach = null;
+        return;
+      }
+      reachGoal.lerpVectors(reach.from, reach.target, 1 - easeIn(back));
+    }
+
+    solveChain({
+      chain: reachChain(), end: hand, target: reachGoal, root: group, passes: REACH_PASSES,
+    });
+  }
 
   function update(now) {
     if (!head) return;
@@ -365,6 +438,8 @@ export function createPassenger() {
       rotateWorld(head, WORLD_Y, amount * lookNeck + drift);
       rotateWorld(head, WORLD_X, amount * LOOK_TILT);
     }
+
+    updateReach(now);
   }
 
   return {
@@ -374,6 +449,8 @@ export function createPassenger() {
     update,
     lookAtDriver: () => look(1),
     lookAway: () => look(0),
+    reachTo,
+    isBusy: () => reach !== null,
     kneeWorldPosition: () => knee.getWorldPosition(new THREE.Vector3()),
     isLoaded: () => head !== null,
   };
