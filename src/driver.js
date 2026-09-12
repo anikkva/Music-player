@@ -37,9 +37,20 @@ const TARGET_HEIGHT = 1.78;
 // down to see — end up inside it. Lifting him leaves the camera nearer his
 // mouth than his eyes, which nobody can see, because his head is not drawn.
 const CUSHION_Y = -0.65;
-const SEAT_CLEARANCE = 0.06;
+// Clearance is measured to the underside of his thigh, not to the hip joint,
+// which is the mistake the first version made. The joint is a point inside the
+// leg: his thigh surface hangs 14 cm below it. Seating the joint 6 cm over the
+// cushion therefore buried the whole leg 8 cm into the upholstery — measured,
+// not guessed — and his knees, the thing you look down to see, came out of the
+// seat rather than resting on it.
+const THIGH_BELOW_HIP = 0.14;
+const SEAT_CLEARANCE = THIGH_BELOW_HIP + 0.02;
 const FLOOR_Y = -0.96;
-const MAX_LIFT = 0.18;
+// Lifting him this far leaves the camera around his chin rather than his eyes.
+// That used to be the reason to keep the cap tight; it stopped mattering when
+// the near plane began clipping everything closer than 34 cm, which is his
+// whole neck and chest.
+const MAX_LIFT = 0.30;
 
 // He is anchored by the eye: the camera cannot move, so if his head lands
 // anywhere but the origin the view ends up inside his chest. The offset runs
@@ -77,7 +88,14 @@ const LEG_FOLD = [
 // person mostly sees their own knees anyway, and the arm still comes up — into
 // an otherwise clear frame, which makes the gesture read — whenever he reaches
 // for the radio.
-const LAP = { left: new THREE.Vector3(-0.17, -0.60, -0.30), right: new THREE.Vector3(0.17, -0.60, -0.30) };
+// Measured off his own legs once he is seated, not written down. Fixed world
+// points went wrong the moment the seating height changed: the hands stayed
+// where the old lap used to be, which was inside his thighs and below what his
+// arms could still reach, so the solver gave up part-way and left two sleeves
+// sticking out of his legs.
+const HAND_ABOVE_THIGH = 0.075; // thigh half-thickness, so the palm rests on top
+const HAND_OUTWARD = 0.035;     // hands sit on the outside of each thigh
+const HAND_ALONG_THIGH = 0.55;  // fraction from hip to knee
 
 const REACH_MS = 420;
 const RETURN_MS = 360;
@@ -116,8 +134,24 @@ export function createDriver({ wheel }) {
   // The posture he returns to, and where the reach chain was when it started.
   const restPose = new Map();
 
-  /** Where a hand rests, in world space. */
-  const restPoint = (side, into) => into.copy(LAP[side]);
+  /**
+   * Where a hand rests, in world space: on top of his own thigh, found from
+   * the leg bones so it follows him however he ends up sitting.
+   */
+  function restPoint(side, into) {
+    const s = side === 'left' ? 'Left' : 'Right';
+    const hip = bone(`${s}UpLeg`);
+    const knee = bone(`${s}Leg`);
+    if (!hip || !knee) return into.set(side === 'left' ? -0.15 : 0.15, -0.48, -0.20);
+    const hipAt = hip.getWorldPosition(new THREE.Vector3());
+    const kneeAt = knee.getWorldPosition(new THREE.Vector3());
+    return into.copy(hipAt).lerp(kneeAt, HAND_ALONG_THIGH)
+      .add(new THREE.Vector3(
+        (side === 'left' ? -1 : 1) * HAND_OUTWARD,
+        HAND_ABOVE_THIGH,
+        0,
+      ));
+  }
 
   // Arm only, deliberately. Both arms share a spine, so a chain that includes
   // it solves the right hand by dragging the left one off the rim it was just

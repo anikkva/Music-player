@@ -16,7 +16,12 @@
 // flat, so the unit is taken down to roughly period size and the camera's
 // close zoom does the rest.
 
-export const RADIO_POSITION = [0.31, -0.35, -0.63];
+// Out from behind the wheel, and nearer for it. At the old spot the rim and
+// the near spoke crossed the left third of the faceplate — AM, FM, BAND and
+// the VOL knob all sat behind steel from the driver's seat. Sliding it right
+// clears the rim; pulling it back toward the driver keeps his shoulder-to-unit
+// distance from growing while it moves, so the reach is no worse than before.
+export const RADIO_POSITION = [0.40, -0.35, -0.56];
 export const RADIO_YAW = 0.02;
 export const RADIO_PITCH = -0.20;
 export const RADIO_SCALE = 0.72;

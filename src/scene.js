@@ -26,7 +26,15 @@ export function createScene(canvas) {
 
   // The camera sits at the driver's eyes and never moves — turning it is
   // turning a head, and zoom is a focal-length change, not a dolly.
-  const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.01, 100);
+  // The near plane is far out on purpose. The camera sits inside the driver's
+  // own skull, so his chest, shoulders and upper arms are between 13 and 35 cm
+  // from the lens: looking down showed a wall of his own shirt instead of his
+  // knees, and reaching across the car put his shoulder over a third of the
+  // frame. Clipping at 34 cm takes the body the eye could never see anyway and
+  // leaves everything a driver actually looks at — his knees at 0.73 m, his
+  // hands at 0.70, the wheel, the radio at 0.85 — untouched.
+  const NEAR = 0.34;
+  const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, NEAR, 100);
   camera.position.set(0, 0, 0);
 
   // Panorama sphere, seen through the windows.

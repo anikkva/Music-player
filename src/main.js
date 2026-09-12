@@ -134,13 +134,22 @@ function boot() {
 
   let lookAwayTimer = 0;
 
+  // Half the thickness of her leg at the knee: the distance from the bone the
+  // hit target hangs on out to the skin.
+  const KNEE_SURFACE = 0.075;
+
   /** Where a control is, and which way it faces the driver. */
   function aimAt(controlId) {
     if (controlId === 'knee') {
       const at = passenger.kneeWorldPosition();
       // The driver's eyes are the origin, so the way out of her knee toward
       // him is simply the way back to the origin.
-      return [at, at.clone().negate().normalize()];
+      const normal = at.clone().negate().normalize();
+      // Her hit target is a ball centred on the leg bone, which is inside the
+      // leg. Aiming at it put his hand a good five centimetres into her thigh
+      // — the arm came to rest looking like it had gone through her. Step out
+      // to roughly where the skin is before the reach adds its own gap.
+      return [at.addScaledVector(normal, KNEE_SURFACE), normal];
     }
     return [radio.worldPositionOf(controlId), faceNormal];
   }
@@ -190,6 +199,16 @@ function boot() {
     player.arm();
     lcd.flashStatus('PRESS VOL', 2200);
     setTimeout(() => { overlay.hidden = true; }, 800);
+  });
+
+  // The button is labelled [ENTER], so Enter has to work. Routed through the
+  // button rather than duplicating the handler, so the browser still counts it
+  // as the gesture that unblocks audio.
+  window.addEventListener('keydown', (e) => {
+    if (overlay.hidden || overlay.classList.contains('hide')) return;
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    startButton.click();
   });
 
   // Debug handle, handy when checking framing from the console.
